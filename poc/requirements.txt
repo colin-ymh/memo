@@ -1,5 +1,6 @@
 numpy
 openai
 cohere
+anthropic
 # 선택 (Voyage도 비교할 때만):
 # voyageai
