@@ -1,2 +1,6 @@
 .claude/pending-report.json
 .claude/.slack-token
+poc/.venv/
+.env
+poc/__pycache__/
+__pycache__/

@@ -1,0 +1,5 @@
+numpy
+openai
+cohere
+# 선택 (Voyage도 비교할 때만):
+# voyageai
