@@ -1,9 +1,14 @@
--- ⚠️ 이 마이그레이션은 process-memo Edge Function 배포 + Vault 시크릿 설정 후에 적용한다.
--- (지금 적용하면 Vault 시크릿이 없어 cron 실행 시 실패)
+-- ⚠️ 미적용 옵션(fallback). 기본 채택 안 함.
+-- 결정: stuck 메모 보정은 pg_cron 상시 폴링 대신 "클라 트리거"로 한다.
+--   오프라인 우선 앱이라 앱 포그라운드 진입/동기화 시점에 본인 stuck 메모를 재처리하면
+--   유저가 recall을 보기 전에 healing된다(복귀 안 한 유저는 recall도 안 보므로 무해).
+--   → 클라 트리거 구현은 Phase 4(iOS)에서. 자세한 건 process-memo/README 참고.
 --
--- 목적: DB Webhook은 fire-and-forget(재시도 없음)이라, 분류/임베딩이 일시 실패한 메모는
---       embedding=null로 영구히 남아 recall에서 사라진다. pg_cron으로 주기적으로 훑어
---       process-memo를 재호출(보정 스윕)한다.
+-- 이 파일은 대량 백필/운영 보정 등 필요 시에만 수동 적용하는 fallback으로 남긴다.
+-- (적용하려면 process-memo 배포 + Vault 시크릿 2개 선행)
+--
+-- 목적(적용 시): DB Webhook은 fire-and-forget(재시도 없음)이라 일시 실패한 메모가
+--       embedding=null로 남는다. pg_cron으로 주기적으로 훑어 process-memo를 재호출한다.
 --
 -- 사전 준비(Supabase 대시보드 또는 SQL):
 --   1) Edge Function 배포: process-memo
