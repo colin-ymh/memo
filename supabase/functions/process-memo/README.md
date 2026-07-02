@@ -1,0 +1,39 @@
+# process-memo
+
+메모 INSERT → 백그라운드 분류(Claude Haiku) + 임베딩(Cohere) → `memos` 갱신.
+
+## 배포 전 필수 (🔴 하드스톱)
+이전 채팅에 노출된 **Anthropic·Cohere 키는 폐기·재발급**하고, 새 키로만 아래 시크릿 설정.
+키를 repo·config.toml·커밋된 .env 어디에도 넣지 않는다.
+
+## 시크릿 (Edge Function secrets)
+`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`는 Supabase가 자동 주입. 추가로 설정할 것:
+
+```
+supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
+supabase secrets set COHERE_API_KEY=...
+supabase secrets set WEBHOOK_SECRET=<임의 난수>   # openssl rand -hex 32
+```
+
+## 배포
+```
+supabase functions deploy process-memo    # config.toml의 verify_jwt=false 적용됨
+```
+
+## DB Webhook 배선 (대시보드 → Database → Webhooks)
+- Table: `public.memos`
+- Events: **Insert 만** (Update/Delete 체크 해제 — 자기 UPDATE 재트리거 방지)
+- Type: HTTP Request → `POST https://<ref>.supabase.co/functions/v1/process-memo`
+- HTTP Headers: `x-webhook-secret: <WEBHOOK_SECRET 값>`
+
+## 보정 스윕 (선택, 배포 후)
+`migrations/20260702020000_reconcile_stuck_memos.sql` 참고 — Vault 시크릿 2개 저장 후 적용.
+webhook이 일시 실패해 `embedding=null`로 남은 메모를 pg_cron이 5분마다 재처리.
+
+## 동작 요약
+1. `x-webhook-secret` 검증 → 2. `embedding` 있으면 skip(멱등)
+3. 유저 기존 카테고리 조회 → 4. Haiku 분류(tool 강제 JSON) + Cohere 임베딩(병렬, 각 재시도)
+5. 카테고리 upsert(race-safe) → 6. `memos` 갱신(category_id·embedding·메타)
+
+관련 메모 recall은 읽기 시점에 앱이 `match_memos`(authenticated)로 직접 호출.
+Edge Function은 `match_memos_for_user`(service_role)를 쓸 수 있으나 현재 경로에선 미사용.

@@ -1,0 +1,6 @@
+project_id = "fudrjfkobyqdmrqeoask"
+
+[functions.process-memo]
+# DB Webhook이 x-webhook-secret 헤더로 호출 → 기본 JWT 검증 끔.
+# (호출자 검증은 함수 내부 WEBHOOK_SECRET 비교로 수행)
+verify_jwt = false
