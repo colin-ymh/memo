@@ -1,0 +1,13 @@
+# XcodeGen 생성물 — project.yml이 소스오브트루스
+*.xcodeproj
+
+# 시크릿(anon 키는 공개 안전하지만 관례상 미커밋)
+Memo/Config/Secrets.xcconfig
+
+# Xcode/SPM
+.DS_Store
+xcuserdata/
+DerivedData/
+.build/
+_preview*.png
+*.xcworkspace/xcuserdata/

@@ -1,0 +1,37 @@
+name: Memo
+options:
+  bundleIdPrefix: com.duovelop
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "6.0"
+    DEVELOPMENT_LANGUAGE: ko
+    # Swift 6 strict concurrency
+    SWIFT_STRICT_CONCURRENCY: complete
+packages:
+  Supabase:
+    url: https://github.com/supabase/supabase-swift
+    from: "2.20.0"
+targets:
+  Memo:
+    type: application
+    platform: iOS
+    sources:
+      - path: Memo
+    settings:
+      base:
+        INFOPLIST_FILE: Memo/Support/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.duovelop.memo
+        # 시뮬레이터 개발: 서명 없이. 실기기/배포 시 팀 설정 필요.
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_ENTITLEMENTS: Memo/Support/Memo.entitlements
+        GENERATE_INFOPLIST_FILE: false
+    dependencies:
+      - package: Supabase
+    configFiles:
+      Debug: Memo/Config/Secrets.xcconfig
+      Release: Memo/Config/Secrets.xcconfig
