@@ -14,7 +14,7 @@ struct RootView: View {
         case .signedOut:
             LoginView(auth: auth)
         case .signedIn:
-            MemoListView()
+            MemoListView(auth: auth)
         }
     }
 }

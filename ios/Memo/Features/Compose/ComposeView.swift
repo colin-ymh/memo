@@ -2,14 +2,19 @@ import SwiftUI
 
 // 메모 작성. 정직한 async: 작성 화면선 분류 결과 안 보여주고, 저장 후 목록에서 "분류 중…"→칩.
 struct ComposeView: View {
+    let onSave: (String) async -> Void
+
     @Environment(\.dismiss) private var dismiss
     @State private var title = ""
-    @State private var body_ = ""
+    @State private var bodyText = ""
+    @State private var saving = false
 
-    private var canSave: Bool {
-        !body_.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    private var content: String {
+        let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let b = bodyText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return [t, b].filter { !$0.isEmpty }.joined(separator: "\n")
     }
+    private var canSave: Bool { !content.isEmpty && !saving }
 
     var body: some View {
         NavigationStack {
@@ -18,12 +23,11 @@ struct ComposeView: View {
                 VStack(spacing: Space.x3) {
                     TextField("제목", text: $title)
                         .font(.appBody)
-                        .padding(Space.x4)
-                        .frame(height: 52)
+                        .padding(Space.x4).frame(height: 52)
                         .background(AppColor.fieldBg)
                         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
 
-                    TextEditor(text: $body_)
+                    TextEditor(text: $bodyText)
                         .font(.appBody)
                         .scrollContentBackground(.hidden)
                         .padding(Space.x3)
@@ -31,7 +35,7 @@ struct ComposeView: View {
                         .background(AppColor.fieldBg)
                         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                         .overlay(alignment: .topLeading) {
-                            if body_.isEmpty {
+                            if bodyText.isEmpty {
                                 Text("메모를 입력하세요…")
                                     .font(.appBody).foregroundStyle(AppColor.textTertiary)
                                     .padding(.horizontal, Space.x4).padding(.vertical, 20)
@@ -39,7 +43,6 @@ struct ComposeView: View {
                             }
                         }
 
-                    // AI 사전 힌트(분류 결과는 저장 후 목록에서)
                     HStack(spacing: Space.x2) {
                         Image(systemName: "tag")
                         Text("저장하면 AI가 자동으로 분류해요")
@@ -56,22 +59,20 @@ struct ComposeView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("취소") { dismiss() }
-                        .foregroundStyle(AppColor.textSecondary)
+                    Button("취소") { dismiss() }.foregroundStyle(AppColor.textSecondary)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("저장") { save() }
-                        .foregroundStyle(AppColor.accent)
-                        .disabled(!canSave)
+                    Button("저장") {
+                        saving = true
+                        Task {
+                            await onSave(content)
+                            dismiss()
+                        }
+                    }
+                    .foregroundStyle(AppColor.accent)
+                    .disabled(!canSave)
                 }
             }
         }
     }
-
-    private func save() {
-        // TODO: 다음 단계 — Supabase INSERT(로컬 우선). 저장 후 목록에서 분류 반영.
-        dismiss()
-    }
 }
-
-#Preview { ComposeView() }
