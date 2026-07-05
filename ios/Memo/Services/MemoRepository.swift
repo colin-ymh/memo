@@ -8,6 +8,8 @@ protocol MemoRepository: Sendable {
     func createMemo(content: String) async throws -> Memo
     func softDeleteMemo(id: UUID) async throws
     func relatedMemos(memoId: UUID) async throws -> [RelatedMemo]
+    func setCategory(memoId: UUID, categoryId: UUID?) async throws
+    func createCategory(name: String) async throws -> Category
 }
 
 // PostgREST row(snake_case). 날짜는 문자열로 받아 안전하게 파싱.
@@ -98,6 +100,30 @@ struct SupabaseMemoRepository: MemoRepository {
         return rows.map {
             RelatedMemo(id: $0.id, content: $0.content, categoryId: $0.category_id, similarity: $0.similarity)
         }
+    }
+
+    func setCategory(memoId: UUID, categoryId: UUID?) async throws {
+        struct Upd: Encodable { let category_id: UUID? }
+        try await client.from("memos")
+            .update(Upd(category_id: categoryId))
+            .eq("id", value: memoId)
+            .execute()
+    }
+
+    func createCategory(name: String) async throws -> Category {
+        guard let userId = client.auth.currentUser?.id else {
+            throw NSError(domain: "memo", code: 401,
+                          userInfo: [NSLocalizedDescriptionKey: "로그인 필요"])
+        }
+        // 사용자 정의 카테고리(created_by_ai=false). 같은 이름 있으면 그거 재사용(upsert).
+        struct Ins: Encodable { let user_id: UUID; let name: String; let created_by_ai: Bool }
+        let row: CategoryRow = try await client.from("categories")
+            .upsert(Ins(user_id: userId, name: name, created_by_ai: false), onConflict: "user_id,name")
+            .select("id,name,created_by_ai")
+            .single()
+            .execute()
+            .value
+        return Category(id: row.id, name: row.name, createdByAi: row.created_by_ai)
     }
 
     private func map(_ r: MemoRow) -> Memo {

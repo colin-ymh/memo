@@ -7,13 +7,23 @@ struct MemoDetailView: View {
 
     @State private var related: [RelatedMemo] = []
     @State private var loadingRelated = true
+    @State private var categoryId: UUID?
+    @State private var showPicker = false
+
+    init(vm: MemoListViewModel, memo: Memo) {
+        self.vm = vm
+        self.memo = memo
+        _categoryId = State(initialValue: memo.categoryId)
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.x4) {
-                if let cat = vm.categoryName(memo.categoryId) {
-                    CategoryChip(label: cat, selected: true)
+                Button { showPicker = true } label: {
+                    CategoryChip(label: vm.categoryName(categoryId) ?? "＋ 카테고리",
+                                 selected: categoryId != nil)
                 }
+                .buttonStyle(.plain)
                 Text(memo.title).font(.appTitle).foregroundStyle(AppColor.textPrimary)
                 Text(memo.preview.isEmpty ? memo.content : memo.preview)
                     .font(.appBody).foregroundStyle(AppColor.textPrimary)
@@ -54,6 +64,22 @@ struct MemoDetailView: View {
             loadingRelated = true
             related = (try? await vm.repo.relatedMemos(memoId: memo.id)) ?? []
             loadingRelated = false
+        }
+        .sheet(isPresented: $showPicker) {
+            CategoryPickerView(
+                categories: vm.allCategories,
+                current: categoryId,
+                onSelect: { cid in
+                    categoryId = cid
+                    Task { await vm.changeCategory(memoId: memo.id, to: cid) }
+                },
+                onCreate: { name in
+                    if let c = await vm.addCategory(name) {
+                        categoryId = c.id
+                        await vm.changeCategory(memoId: memo.id, to: c.id)
+                    }
+                }
+            )
         }
     }
 
