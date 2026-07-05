@@ -6,6 +6,7 @@ protocol MemoRepository: Sendable {
     func fetchMemos() async throws -> [Memo]
     func fetchCategories() async throws -> [Category]
     func createMemo(content: String) async throws -> Memo
+    func updateMemo(memoId: UUID, content: String) async throws
     func softDeleteMemo(id: UUID) async throws
     func relatedMemos(memoId: UUID) async throws -> [RelatedMemo]
     func setCategory(memoId: UUID, categoryId: UUID?) async throws
@@ -78,6 +79,17 @@ struct SupabaseMemoRepository: MemoRepository {
             .execute()
             .value
         return map(row)
+    }
+
+    // 주의: 내용 편집은 재분류를 트리거하지 않는다(webhook은 INSERT 전용).
+    // 카테고리/임베딩은 유지 → 재임베딩은 추후 항목.
+    func updateMemo(memoId: UUID, content: String) async throws {
+        struct Upd: Encodable { let content: String }
+        try await client
+            .from("memos")
+            .update(Upd(content: content))
+            .eq("id", value: memoId)
+            .execute()
     }
 
     func softDeleteMemo(id: UUID) async throws {

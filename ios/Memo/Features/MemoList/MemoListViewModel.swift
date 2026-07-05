@@ -113,6 +113,20 @@ final class MemoListViewModel {
 
     func memo(_ id: UUID) -> Memo? { memos.first { $0.id == id } }
 
+    func updateMemo(memoId: UUID, content: String) async {
+        if let i = memos.firstIndex(where: { $0.id == memoId }) {
+            memos[i].content = content; rebuild()
+        }
+        do { try await repo.updateMemo(memoId: memoId, content: content) }
+        catch { errorText = error.localizedDescription; await load() }
+    }
+
+    func deleteMemo(_ id: UUID) async {
+        memos.removeAll { $0.id == id }; rebuild()
+        do { try await repo.softDeleteMemo(id: id) }
+        catch { errorText = error.localizedDescription; await load() }
+    }
+
     // 메모의 카테고리 변경(사용자 오버라이드). 로컬 즉시 반영 + 서버 저장.
     func changeCategory(memoId: UUID, to categoryId: UUID?) async {
         if let idx = memos.firstIndex(where: { $0.id == memoId }) {

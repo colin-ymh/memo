@@ -5,15 +5,28 @@ struct MemoDetailView: View {
     let vm: MemoListViewModel
     let memo: Memo
 
+    @Environment(\.dismiss) private var dismiss
     @State private var related: [RelatedMemo] = []
     @State private var loadingRelated = true
     @State private var categoryId: UUID?
+    @State private var content: String
     @State private var showPicker = false
+    @State private var showEdit = false
+    @State private var showDeleteConfirm = false
 
     init(vm: MemoListViewModel, memo: Memo) {
         self.vm = vm
         self.memo = memo
         _categoryId = State(initialValue: memo.categoryId)
+        _content = State(initialValue: memo.content)
+    }
+
+    private var displayTitle: String {
+        content.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? ""
+    }
+    private var displayBody: String {
+        let p = content.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: true)
+        return (p.count > 1 ? String(p[1]) : "").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     var body: some View {
@@ -24,10 +37,12 @@ struct MemoDetailView: View {
                                  selected: categoryId != nil)
                 }
                 .buttonStyle(.plain)
-                Text(memo.title).font(.appTitle).foregroundStyle(AppColor.textPrimary)
-                Text(memo.preview.isEmpty ? memo.content : memo.preview)
-                    .font(.appBody).foregroundStyle(AppColor.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Text(displayTitle).font(.appTitle).foregroundStyle(AppColor.textPrimary)
+                if !displayBody.isEmpty {
+                    Text(displayBody)
+                        .font(.appBody).foregroundStyle(AppColor.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 Divider().overlay(AppColor.borderDefault)
 
@@ -80,6 +95,30 @@ struct MemoDetailView: View {
                     }
                 }
             )
+        }
+        .sheet(isPresented: $showEdit) {
+            ComposeView(initialContent: content, navTitle: "메모 편집") { newContent in
+                content = newContent
+                await vm.updateMemo(memoId: memo.id, content: newContent)
+            }
+        }
+        .confirmationDialog("이 메모를 삭제할까요?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+            Button("삭제", role: .destructive) {
+                Task { await vm.deleteMemo(memo.id); dismiss() }
+            }
+            Button("취소", role: .cancel) {}
+        }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button { showEdit = true } label: { Label("편집", systemImage: "pencil") }
+                    Button(role: .destructive) { showDeleteConfirm = true } label: {
+                        Label("삭제", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis").foregroundStyle(AppColor.textPrimary)
+                }
+            }
         }
     }
 

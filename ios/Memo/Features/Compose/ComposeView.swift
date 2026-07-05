@@ -2,12 +2,22 @@ import SwiftUI
 
 // 메모 작성. 정직한 async: 작성 화면선 분류 결과 안 보여주고, 저장 후 목록에서 "분류 중…"→칩.
 struct ComposeView: View {
+    let navTitle: String
     let onSave: (String) async -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var title = ""
-    @State private var bodyText = ""
+    @State private var title: String
+    @State private var bodyText: String
     @State private var saving = false
+
+    init(initialContent: String = "", navTitle: String = "새 메모",
+         onSave: @escaping (String) async -> Void) {
+        self.navTitle = navTitle
+        self.onSave = onSave
+        let parts = initialContent.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+        _title = State(initialValue: parts.first.map(String.init) ?? "")
+        _bodyText = State(initialValue: parts.count > 1 ? String(parts[1]) : "")
+    }
 
     private var content: String {
         let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -55,7 +65,7 @@ struct ComposeView: View {
                 }
                 .padding(Space.x5)
             }
-            .navigationTitle("새 메모")
+            .navigationTitle(navTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
