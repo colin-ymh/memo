@@ -6,6 +6,16 @@ struct MemoListView: View {
     @State private var showCompose = false
 
     var body: some View {
+        NavigationStack {
+            content
+                .navigationDestination(for: Memo.self) { m in
+                    MemoDetailView(vm: vm, memo: m)
+                }
+                .toolbar(.hidden, for: .navigationBar)
+        }
+    }
+
+    private var content: some View {
         ZStack(alignment: .bottomTrailing) {
             AppColor.bgCanvas.ignoresSafeArea()
 
@@ -32,8 +42,11 @@ struct MemoListView: View {
                         emptyState
                     } else {
                         ForEach(vm.cards) { c in
-                            MemoCardView(title: c.title, preview: c.preview,
-                                         meta: c.meta, classifying: c.classifying)
+                            NavigationLink(value: c.memo) {
+                                MemoCardView(title: c.title, preview: c.preview,
+                                             meta: c.meta, classifying: c.classifying)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
 

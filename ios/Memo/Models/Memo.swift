@@ -23,6 +23,22 @@ struct Memo: Identifiable, Codable, Sendable, Hashable {
     }
 }
 
+// 관련 메모(recall) — related_memos RPC 결과.
+struct RelatedMemo: Identifiable, Sendable, Hashable {
+    let id: UUID
+    let content: String
+    let categoryId: UUID?
+    let similarity: Double
+
+    var title: String {
+        content.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? ""
+    }
+    var snippet: String {
+        let parts = content.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: true)
+        return (parts.count > 1 ? String(parts[1]) : "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
 struct Category: Identifiable, Codable, Sendable, Hashable {
     let id: UUID
     var name: String

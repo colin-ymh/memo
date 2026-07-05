@@ -28,6 +28,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.duovelop.memo
         # 시뮬레이터 개발: 서명 없이. 실기기/배포 시 팀 설정 필요.
         CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 64SH5H5CW4
         CODE_SIGN_ENTITLEMENTS: Memo/Support/Memo.entitlements
         GENERATE_INFOPLIST_FILE: false
     dependencies:

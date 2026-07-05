@@ -3,6 +3,7 @@ import Supabase
 
 struct MemoCardData: Identifiable, Sendable {
     let id: UUID
+    let memo: Memo
     let title: String
     let preview: String
     let meta: String?
@@ -20,7 +21,9 @@ final class MemoListViewModel {
 
     private var memos: [Memo] = []
     private var categoryNames: [UUID: String] = [:]
-    private let repo: MemoRepository = SupabaseMemoRepository()
+    let repo: MemoRepository = SupabaseMemoRepository()
+
+    func categoryName(_ id: UUID?) -> String? { id.flatMap { categoryNames[$0] } }
     private let rel: RelativeDateTimeFormatter = {
         let f = RelativeDateTimeFormatter(); f.locale = Locale(identifier: "ko_KR"); f.unitsStyle = .short
         return f
@@ -72,11 +75,13 @@ final class MemoListViewModel {
             let cat = m.categoryId.flatMap { categoryNames[$0] }
             let time = rel.localizedString(for: m.createdAt, relativeTo: Date())
             let meta = cat.map { "\($0) · \(time)" } ?? time
-            return MemoCardData(id: m.id, title: m.title.isEmpty ? "(제목 없음)" : m.title,
+            return MemoCardData(id: m.id, memo: m, title: m.title.isEmpty ? "(제목 없음)" : m.title,
                                 preview: m.preview, meta: meta,
                                 classifying: !m.isClassified)
         }
     }
 
     func selectFilter(_ f: String) { selectedFilter = f; rebuild() }
+
+    func memo(_ id: UUID) -> Memo? { memos.first { $0.id == id } }
 }

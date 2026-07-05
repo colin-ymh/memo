@@ -7,6 +7,7 @@ protocol MemoRepository: Sendable {
     func fetchCategories() async throws -> [Category]
     func createMemo(content: String) async throws -> Memo
     func softDeleteMemo(id: UUID) async throws
+    func relatedMemos(memoId: UUID) async throws -> [RelatedMemo]
 }
 
 // PostgREST row(snake_case). 날짜는 문자열로 받아 안전하게 파싱.
@@ -83,6 +84,20 @@ struct SupabaseMemoRepository: MemoRepository {
             .update(["deleted_at": iso.string(from: Date())])
             .eq("id", value: id)
             .execute()
+    }
+
+    func relatedMemos(memoId: UUID) async throws -> [RelatedMemo] {
+        struct Params: Encodable { let p_memo_id: UUID }
+        struct RelatedRow: Decodable {
+            let id: UUID; let content: String; let category_id: UUID?; let similarity: Double
+        }
+        let rows: [RelatedRow] = try await client
+            .rpc("related_memos", params: Params(p_memo_id: memoId))
+            .execute()
+            .value
+        return rows.map {
+            RelatedMemo(id: $0.id, content: $0.content, categoryId: $0.category_id, similarity: $0.similarity)
+        }
     }
 
     private func map(_ r: MemoRow) -> Memo {
