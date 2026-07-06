@@ -1,4 +1,5 @@
 import SwiftUI
+import MarkdownUI
 
 // 메모 상세 — 본문 + 카테고리 + 관련 메모(recall).
 struct MemoDetailView: View {
@@ -39,8 +40,9 @@ struct MemoDetailView: View {
                 .buttonStyle(.plain)
                 Text(displayTitle).font(.appTitle).foregroundStyle(AppColor.textPrimary)
                 if !displayBody.isEmpty {
-                    Text(displayBody)
-                        .font(.appBody).foregroundStyle(AppColor.textPrimary)
+                    // 본문은 마크다운 렌더(제목/리스트/굵게/코드 등). 전경색은 테마 상속.
+                    Markdown(displayBody)
+                        .markdownTextStyle { ForegroundColor(AppColor.textPrimary) }
                         .fixedSize(horizontal: false, vertical: true)
                 }
 

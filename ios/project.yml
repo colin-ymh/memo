@@ -16,6 +16,9 @@ packages:
   Supabase:
     url: https://github.com/supabase/supabase-swift
     from: "2.20.0"
+  MarkdownUI:
+    url: https://github.com/gonzalezreal/swift-markdown-ui
+    from: "2.4.0"
 targets:
   Memo:
     type: application
@@ -35,6 +38,7 @@ targets:
         GENERATE_INFOPLIST_FILE: false
     dependencies:
       - package: Supabase
+      - package: MarkdownUI
     configFiles:
       Debug: Memo/Config/Secrets.xcconfig
       Release: Memo/Config/Secrets.xcconfig

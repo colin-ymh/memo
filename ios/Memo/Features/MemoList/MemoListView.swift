@@ -6,6 +6,9 @@ struct MemoListView: View {
     @State private var net = NetworkMonitor()
     @State private var showCompose = false
     @State private var showSettings = false
+    @State private var openRowID: UUID?          // 스와이프로 열린 행(한 번에 하나)
+    @State private var editingMemo: Memo?         // 스와이프 편집 시트 대상
+    @State private var pendingDeleteID: UUID?     // 스와이프 삭제 확인 대상
 
     var body: some View {
         NavigationStack {
@@ -91,11 +94,15 @@ struct MemoListView: View {
                         emptyState
                     } else {
                         ForEach(vm.cards) { c in
-                            NavigationLink(value: c.memo) {
-                                MemoCardView(title: c.title, preview: c.preview,
-                                             meta: c.meta, classifying: c.classifying)
+                            SwipeableRow(rowID: c.id, openRowID: $openRowID,
+                                         onEdit: { editingMemo = c.memo },
+                                         onDelete: { pendingDeleteID = c.id }) {
+                                NavigationLink(value: c.memo) {
+                                    MemoCardView(title: c.title, preview: c.preview,
+                                                 meta: c.meta, classifying: c.classifying)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
 
@@ -131,6 +138,22 @@ struct MemoListView: View {
         }
         .sheet(isPresented: $showSettings) {
             SettingsView(auth: auth, vm: vm)
+        }
+        // 스와이프 편집 — ComposeView 프리필(상세 편집과 동일 패턴)
+        .sheet(item: $editingMemo) { m in
+            ComposeView(initialContent: m.content, navTitle: "메모 편집") { newContent in
+                await vm.updateMemo(memoId: m.id, content: newContent)
+            }
+        }
+        // 스와이프 삭제 확인
+        .confirmationDialog("이 메모를 삭제할까요?",
+                            isPresented: Binding(get: { pendingDeleteID != nil },
+                                                 set: { if !$0 { pendingDeleteID = nil } }),
+                            titleVisibility: .visible) {
+            Button("삭제", role: .destructive) {
+                if let id = pendingDeleteID { Task { await vm.deleteMemo(id) } }
+            }
+            Button("취소", role: .cancel) {}
         }
     }
 
