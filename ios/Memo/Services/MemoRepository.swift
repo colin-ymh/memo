@@ -11,6 +11,8 @@ protocol MemoRepository: Sendable {
     func relatedMemos(memoId: UUID) async throws -> [RelatedMemo]
     func setCategory(memoId: UUID, categoryId: UUID?) async throws
     func createCategory(name: String) async throws -> Category
+    func renameCategory(id: UUID, name: String) async throws
+    func mergeCategory(source: UUID, into target: UUID) async throws
 }
 
 // PostgREST row(snake_case). 날짜는 문자열로 받아 안전하게 파싱.
@@ -135,6 +137,23 @@ struct SupabaseMemoRepository: MemoRepository {
             .execute()
             .value
         return Category(id: row.id, name: row.name, createdByAi: row.created_by_ai)
+    }
+
+    // 카테고리 이름 변경. unique(user_id,name) 충돌 시 오류 → 호출부에서 "병합" 유도.
+    func renameCategory(id: UUID, name: String) async throws {
+        struct Upd: Encodable { let name: String }
+        try await client.from("categories")
+            .update(Upd(name: name))
+            .eq("id", value: id)
+            .execute()
+    }
+
+    // source 카테고리의 메모를 target으로 옮기고 source 삭제(서버 트랜잭션 RPC).
+    func mergeCategory(source: UUID, into target: UUID) async throws {
+        struct Params: Encodable { let p_source: UUID; let p_target: UUID }
+        try await client
+            .rpc("merge_categories", params: Params(p_source: source, p_target: target))
+            .execute()
     }
 
     private func map(_ r: MemoRow) -> Memo {

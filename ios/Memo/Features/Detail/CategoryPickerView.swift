@@ -9,12 +9,20 @@ struct CategoryPickerView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var newName = ""
+    @State private var search = ""
+
+    // 지정 화면이라 숨기지 않고 전량 유지 — 대신 검색으로 좁힌다.
+    private var filtered: [Category] {
+        let q = search.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return categories }
+        return categories.filter { $0.name.localizedCaseInsensitiveContains(q) }
+    }
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
-                    ForEach(categories) { c in
+                    ForEach(filtered) { c in
                         Button { onSelect(c.id); dismiss() } label: {
                             HStack {
                                 Text(c.name).foregroundStyle(AppColor.textPrimary)
@@ -42,6 +50,7 @@ struct CategoryPickerView: View {
                     }
                 }
             }
+            .searchable(text: $search, prompt: "카테고리 검색")
             .navigationTitle("카테고리")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

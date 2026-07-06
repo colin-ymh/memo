@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     let auth: AuthService
+    @Bindable var vm: MemoListViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var showDeleteConfirm = false
     @State private var deleting = false
@@ -26,6 +27,14 @@ struct SettingsView: View {
                         LabeledContent("이메일", value: email)
                     }
                     LabeledContent("로그인", value: providerLabel)
+                }
+
+                Section("정리") {
+                    NavigationLink {
+                        CategoryManageView(vm: vm)
+                    } label: {
+                        LabeledContent("카테고리 관리", value: "\(vm.allCategories.count)")
+                    }
                 }
 
                 Section {

@@ -16,6 +16,8 @@ final class MemoListViewModel {
     var cards: [MemoCardData] = []
     var allCategories: [Category] = []
     var chips: [String] = ["전체"]
+    var chipsExpanded = false          // 칩 바 "더보기" 펼침 상태
+    var categoryCounts: [UUID: Int] = [:]  // 카테고리별 메모 수(사용순 정렬·관리화면용)
     var selectedFilter = "전체"
     var isLoading = false
     var offline = false
@@ -67,9 +69,18 @@ final class MemoListViewModel {
 
     private func apply(memos mm: [Memo], categories cc: [Category]) {
         categoryNames = Dictionary(cc.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
-        allCategories = cc.sorted { $0.name < $1.name }
+        // 카테고리별 메모 수(미분류 제외) — 사용순 정렬·관리화면 표시에 재사용
+        var counts: [UUID: Int] = [:]
+        for m in mm { if let c = m.categoryId { counts[c, default: 0] += 1 } }
+        categoryCounts = counts
+        // 사용순(desc) → 동수면 이름순. 오래 안 쓴 큰 카테고리가 묻히지 않게 최근순 대신 사용순.
+        let sorted = cc.sorted { a, b in
+            let ca = counts[a.id] ?? 0, cb = counts[b.id] ?? 0
+            return ca != cb ? ca > cb : a.name < b.name
+        }
+        allCategories = sorted
         memos = mm
-        chips = ["전체"] + cc.map(\.name)
+        chips = ["전체"] + sorted.map(\.name)
         rebuild()
     }
 
@@ -219,10 +230,29 @@ final class MemoListViewModel {
             let cat = try await repo.createCategory(name: trimmed)
             if !allCategories.contains(where: { $0.id == cat.id }) {
                 allCategories.append(cat)
-                allCategories.sort { $0.name < $1.name }
+                // 사용순(desc)·이름순 정렬 유지 — 새 카테고리는 count 0이라 뒤로.
+                allCategories.sort { a, b in
+                    let ca = categoryCounts[a.id] ?? 0, cb = categoryCounts[b.id] ?? 0
+                    return ca != cb ? ca > cb : a.name < b.name
+                }
                 categoryNames[cat.id] = cat.name
             }
             return cat
         } catch { errorText = error.localizedDescription; return nil }
+    }
+
+    // 카테고리 관리(온라인 즉시 실행 + 재로딩). 오프라인 큐 대상 아님.
+    // 이름변경: unique(user_id,name) 충돌 시 실패 → 호출부에서 병합 유도.
+    func renameCategory(_ id: UUID, to name: String) async -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        do { try await repo.renameCategory(id: id, name: trimmed); await load(); return true }
+        catch { errorText = error.localizedDescription; return false }
+    }
+
+    func mergeCategory(_ source: UUID, into target: UUID) async -> Bool {
+        guard source != target else { return false }
+        do { try await repo.mergeCategory(source: source, into: target); await load(); return true }
+        catch { errorText = error.localizedDescription; return false }
     }
 }

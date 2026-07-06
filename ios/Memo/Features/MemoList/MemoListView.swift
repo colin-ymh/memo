@@ -36,9 +36,22 @@ struct MemoListView: View {
 
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: Space.x2) {
-                            ForEach(vm.chips, id: \.self) { f in
+                            // "전체" + 사용순 카테고리. 많으면 상위 N개만 + "더보기"로 접기.
+                            let catChips = Array(vm.chips.dropFirst())   // 카테고리(사용순)
+                            let limit = 8
+                            let showAll = vm.chipsExpanded || catChips.count <= limit
+                            let visible = showAll ? catChips : Array(catChips.prefix(limit))
+
+                            CategoryChip(label: "전체", selected: vm.selectedFilter == "전체")
+                                .onTapGesture { vm.selectFilter("전체") }
+                            ForEach(visible, id: \.self) { f in
                                 CategoryChip(label: f, selected: f == vm.selectedFilter)
                                     .onTapGesture { vm.selectFilter(f) }
+                            }
+                            if catChips.count > limit {
+                                CategoryChip(label: showAll ? "접기" : "더보기 \(catChips.count - limit)",
+                                             selected: false)
+                                    .onTapGesture { vm.chipsExpanded.toggle() }
                             }
                         }
                     }
@@ -98,7 +111,7 @@ struct MemoListView: View {
             }
         }
         .sheet(isPresented: $showSettings) {
-            SettingsView(auth: auth)
+            SettingsView(auth: auth, vm: vm)
         }
     }
 

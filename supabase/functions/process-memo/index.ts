@@ -24,16 +24,22 @@ const WEBHOOK_SECRET = Deno.env.get("WEBHOOK_SECRET")!;
 // 분류 규칙 = 안정적이라 캐싱 대상. 카테고리 목록은 바뀌므로 user 메시지에.
 const CLASSIFY_SYSTEM = `너는 개인 메모 앱의 카테고리 분류기다.
 
+대원칙: **기존 카테고리 재사용을 강하게 선호하라.** 카테고리가 무한정 늘어나면
+사용자에게 쓸모없어진다. 새 카테고리는 정말로 새로운 주제일 때만 만든다.
+
 규칙:
-- 사용자의 기존 카테고리 목록을 먼저 본다.
-- 기존 카테고리는 메모가 그 주제에 '명확히' 속할 때만 재사용한다.
+- 사용자의 기존 카테고리 목록을 먼저 본다. 각 항목엔 이미 쌓인 메모 수(count)가 붙어 있다.
+  **메모가 많이 쌓인(count 큰) 카테고리일수록 우선 재사용**을 검토한다.
+- 기존 카테고리는 메모가 그 주제에 합리적으로 속하면 재사용한다.
   언어가 달라도 의미가 같으면 재사용한다(예: "개발"이 있으면 영어 개발 메모도 "개발", 새 "Development" 금지).
-- 조금이라도 주제가 다르거나 애매하면 억지로 끼워넣지 말고 새 카테고리를 제안한다(is_new=true).
-  '약하게만' 걸치는 기존 카테고리로 욱여넣는 것을 특히 경계한다(예: 마케팅 메모를 "개발"에 넣지 마라).
+  이름이 정확히 같지 않아도 의미가 겹치면 기존 것으로 묶는다(예: "여행"이 있으면 "여행계획"을 새로 만들지 말고 "여행" 재사용).
+- 새 카테고리는 기존 어디에도 합리적으로 속하지 않는 '분명히 다른' 주제일 때만 제안한다(is_new=true).
+  단, '약하게만' 걸치는 억지 분류는 여전히 피한다(예: 마케팅 메모를 "개발"에 넣지 마라).
 - 카테고리는 '구체적'으로. 너무 큰 범주("기타"·"일상"·"메모")나 지나치게 포괄적인 이름은 피한다.
 - 새 카테고리 이름은 메모와 같은 언어로, 짧고 자연스러운 명사로(대략 2~5자).
-- confidence는 '기존 카테고리 재사용'에 대한 확신도다(0~1). **0.7 미만이면 기존에 넣지 말고
-  is_new=true로 새 카테고리를 제안하라.** 새 카테고리를 만들 때 confidence는 그 제안의 확신도로 준다.`;
+- confidence는 '기존 카테고리 재사용'에 대한 확신도다(0~1). **0.4 미만일 때만 기존에 넣지 말고
+  is_new=true로 새 카테고리를 제안하라.** 0.4~1.0이면 가장 적합한 기존 카테고리를 재사용한다.
+  새 카테고리를 만들 때 confidence는 그 제안의 확신도로 준다.`;
 
 const CLASSIFY_TOOL = {
   name: "classify",
@@ -70,7 +76,9 @@ async function retry<T>(fn: () => Promise<T>, tries = 3, baseMs = 400): Promise<
   throw lastErr;
 }
 
-async function classify(existing: string[], content: string): Promise<Classification> {
+type ExistingCat = { name: string; count: number };
+
+async function classify(existing: ExistingCat[], content: string): Promise<Classification> {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -142,11 +150,14 @@ Deno.serve(async (req) => {
   const supa = createClient(SUPABASE_URL, SERVICE_ROLE);
 
   try {
-    // 3) 기존 카테고리
-    const { data: cats, error: catErr } = await supa
-      .from("categories").select("name").eq("user_id", userId);
+    // 3) 기존 카테고리 + 카테고리별 메모 수(재사용 편향 힌트).
+    //    DB에서 GROUP BY 집계(category_usage RPC) → 전체 메모 행을 끌어오지 않음.
+    const { data: usage, error: catErr } = await supa
+      .rpc("category_usage", { p_user_id: userId });
     if (catErr) throw catErr;
-    const existing = (cats ?? []).map((c) => c.name as string);
+    const existing: ExistingCat[] = ((usage ?? []) as { name: string; n: number }[])
+      .map((u) => ({ name: u.name, count: Number(u.n) }))
+      .sort((a, b) => b.count - a.count);
 
     // 4) 분류 + 5) 임베딩 (각각 재시도)
     const [cls, vec] = await Promise.all([
