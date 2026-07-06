@@ -37,6 +37,9 @@ final class MemoListViewModel {
     var searchText = "" { didSet { rebuild() } }   // 메모 본문 검색(로컬 필터)
     var sortOrder: MemoSort = .newest { didSet { rebuild() } }
     var uncategorizedOnly = false { didSet { rebuild() } }
+    var semanticMode = false { didSet { semanticHits = nil; rebuild() } }  // 의미 검색 토글
+    var searching = false           // 시맨틱 검색 진행 중
+    private var semanticHits: [UUID]?   // 유사도순 결과 id(nil=미실행)
     var isLoading = false
     var offline = false
     var errorText: String?
@@ -146,8 +149,25 @@ final class MemoListViewModel {
         }
     }
 
+    private func card(_ m: Memo) -> MemoCardData {
+        let cat = m.categoryId.flatMap { categoryNames[$0] }
+        let time = rel.localizedString(for: m.createdAt, relativeTo: Date())
+        let meta = cat.map { "\($0) · \(time)" } ?? time
+        return MemoCardData(id: m.id, memo: m,
+                            title: m.title.isEmpty ? String(localized: "(제목 없음)") : m.title,
+                            preview: m.preview, meta: meta,
+                            classifying: !m.isClassified, pinned: m.isPinned)
+    }
+
     private func rebuild() {
         rel.locale = AppSettings.shared.appLanguage.locale   // 상대시간도 앱 언어 따름
+        // 시맨틱 모드: 유사도순 결과만(핀/정렬/카테고리 필터 미적용 — 검색 결과 뷰)
+        if semanticMode {
+            let byId = Dictionary(memos.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            cards = (semanticHits ?? []).compactMap { byId[$0] }.map(card)
+            watchClassifying()
+            return
+        }
         let q = searchText.trimmingCharacters(in: .whitespaces)
         let filtered = memos.filter { m in
             // 미분류만 보기
@@ -170,15 +190,23 @@ final class MemoListViewModel {
             case .updated: return a.updatedAt > b.updatedAt
             }
         }
-        cards = sorted.map { m in
-            let cat = m.categoryId.flatMap { categoryNames[$0] }
-            let time = rel.localizedString(for: m.createdAt, relativeTo: Date())
-            let meta = cat.map { "\($0) · \(time)" } ?? time
-            return MemoCardData(id: m.id, memo: m, title: m.title.isEmpty ? String(localized: "(제목 없음)") : m.title,
-                                preview: m.preview, meta: meta,
-                                classifying: !m.isClassified, pinned: m.isPinned)
-        }
+        cards = sorted.map(card)
         watchClassifying()
+    }
+
+    // 시맨틱 검색 실행(제출 시). 결과 id를 로컬 memos와 매칭해 유사도순 표시.
+    func runSemanticSearch() async {
+        let q = searchText.trimmingCharacters(in: .whitespaces)
+        guard semanticMode, !q.isEmpty else { semanticHits = nil; rebuild(); return }
+        searching = true; defer { searching = false }
+        do {
+            let hits = try await repo.searchSemantic(query: q, count: 30)
+            semanticHits = hits.map(\.id)
+        } catch {
+            errorText = error.localizedDescription
+            semanticHits = []
+        }
+        rebuild()
     }
 
     func selectFilter(_ f: String) { selectedFilter = f; rebuild() }

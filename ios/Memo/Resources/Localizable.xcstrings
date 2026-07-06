@@ -109,6 +109,9 @@
     "메모 검색" : {
       "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Search memos" } } }
     },
+    "의미로 검색 (엔터)" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Search by meaning (Enter)" } } }
+    },
     "메모 편집" : {
       "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Edit Memo" } } }
     },

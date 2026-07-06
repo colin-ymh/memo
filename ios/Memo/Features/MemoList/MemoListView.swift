@@ -47,17 +47,30 @@ struct MemoListView: View {
                     }
                     .padding(.top, Space.x2)
 
-                    // 메모 본문 검색(로컬 필터). 네비바 숨김 UI라 .searchable 대신 커스텀 필드.
+                    // 검색. 네비바 숨김 UI라 .searchable 대신 커스텀 필드.
+                    // 본문(로컬 즉시) / 의미(시맨틱, 제출 시 서버) 모드 토글.
                     HStack(spacing: Space.x2) {
-                        Image(systemName: "magnifyingglass").foregroundStyle(AppColor.textTertiary)
-                        TextField("메모 검색", text: $vm.searchText)
+                        if vm.searching {
+                            DotSpinner(size: 18)
+                        } else {
+                            Image(systemName: vm.semanticMode ? "sparkle.magnifyingglass" : "magnifyingglass")
+                                .foregroundStyle(AppColor.textTertiary)
+                        }
+                        TextField(vm.semanticMode ? "의미로 검색 (엔터)" : "메모 검색", text: $vm.searchText)
                             .foregroundStyle(AppColor.textPrimary)
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
+                            .submitLabel(.search)
+                            .onSubmit { if vm.semanticMode { Task { await vm.runSemanticSearch() } } }
                         if !vm.searchText.isEmpty {
                             Button { vm.searchText = "" } label: {
                                 Image(systemName: "xmark.circle.fill").foregroundStyle(AppColor.textTertiary)
                             }
+                        }
+                        // 의미/본문 모드 토글
+                        Button { vm.semanticMode.toggle() } label: {
+                            Image(systemName: "sparkles")
+                                .foregroundStyle(vm.semanticMode ? AppColor.accent : AppColor.textTertiary)
                         }
                     }
                     .padding(.horizontal, Space.x3).padding(.vertical, Space.x3)

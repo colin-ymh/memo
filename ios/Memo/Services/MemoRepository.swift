@@ -1,6 +1,12 @@
 import Foundation
 import Supabase
 
+// 시맨틱 검색 결과(Edge Function 반환).
+struct SemanticHit: Decodable, Sendable, Identifiable {
+    let id: UUID
+    let similarity: Double
+}
+
 // 데이터 접근 추상화(advisor: 프로토콜 뒤에 둬서 나중에 로컬캐시/동기화로 교체 쉽게).
 protocol MemoRepository: Sendable {
     func fetchMemos() async throws -> [Memo]
@@ -11,6 +17,7 @@ protocol MemoRepository: Sendable {
     func relatedMemos(memoId: UUID) async throws -> [RelatedMemo]
     func setCategory(memoId: UUID, categoryId: UUID?) async throws
     func setPinned(memoId: UUID, pinned: Bool) async throws
+    func searchSemantic(query: String, count: Int) async throws -> [SemanticHit]
     func createCategory(name: String) async throws -> Category
     func renameCategory(id: UUID, name: String) async throws
     func mergeCategory(source: UUID, into target: UUID) async throws
@@ -157,6 +164,15 @@ struct SupabaseMemoRepository: MemoRepository {
         try await client
             .rpc("merge_categories", params: Params(p_source: source, p_target: target))
             .execute()
+    }
+
+    // 시맨틱 검색 — Edge Function(쿼리 임베딩 + match_memos). 유저 토큰 자동 첨부.
+    func searchSemantic(query: String, count: Int) async throws -> [SemanticHit] {
+        struct Body: Encodable { let query: String; let count: Int }
+        struct Resp: Decodable { let results: [SemanticHit] }
+        let resp: Resp = try await client.functions.invoke(
+            "search-memos", options: .init(body: Body(query: query, count: count)))
+        return resp.results
     }
 
     func setPinned(memoId: UUID, pinned: Bool) async throws {
