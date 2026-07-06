@@ -19,6 +19,7 @@ final class MemoListViewModel {
     var chipsExpanded = false          // 칩 바 "더보기" 펼침 상태
     var categoryCounts: [UUID: Int] = [:]  // 카테고리별 메모 수(사용순 정렬·관리화면용)
     var selectedFilter = "전체"
+    var searchText = "" { didSet { rebuild() } }   // 메모 본문 검색(로컬 필터)
     var isLoading = false
     var offline = false
     var errorText: String?
@@ -128,16 +129,22 @@ final class MemoListViewModel {
     }
 
     private func rebuild() {
+        let q = searchText.trimmingCharacters(in: .whitespaces)
         let filtered = memos.filter { m in
-            guard selectedFilter != "전체" else { return true }
-            guard let cid = m.categoryId else { return false }
-            return categoryNames[cid] == selectedFilter
+            // 카테고리 필터
+            let catOK: Bool
+            if selectedFilter == "전체" { catOK = true }
+            else if let cid = m.categoryId { catOK = categoryNames[cid] == selectedFilter }
+            else { catOK = false }
+            guard catOK else { return false }
+            // 검색 필터(본문) — AND 결합
+            return q.isEmpty || m.content.localizedCaseInsensitiveContains(q)
         }
         cards = filtered.map { m in
             let cat = m.categoryId.flatMap { categoryNames[$0] }
             let time = rel.localizedString(for: m.createdAt, relativeTo: Date())
             let meta = cat.map { "\($0) · \(time)" } ?? time
-            return MemoCardData(id: m.id, memo: m, title: m.title.isEmpty ? "(제목 없음)" : m.title,
+            return MemoCardData(id: m.id, memo: m, title: m.title.isEmpty ? String(localized: "(제목 없음)") : m.title,
                                 preview: m.preview, meta: meta,
                                 classifying: !m.isClassified)
         }

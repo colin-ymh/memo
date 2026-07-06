@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     let auth: AuthService
     @Bindable var vm: MemoListViewModel
+    @State private var settings = AppSettings.shared
     @Environment(\.dismiss) private var dismiss
     @State private var showDeleteConfirm = false
     @State private var deleting = false
@@ -27,6 +28,19 @@ struct SettingsView: View {
                         LabeledContent("이메일", value: email)
                     }
                     LabeledContent("로그인", value: providerLabel)
+                }
+
+                Section("화면") {
+                    Picker("화면 테마", selection: $settings.themeMode) {
+                        ForEach(ThemeMode.allCases) { m in
+                            Text(m.label).tag(m)
+                        }
+                    }
+                    Picker("언어", selection: $settings.appLanguage) {
+                        ForEach(AppLanguage.allCases) { l in
+                            Text(l.label).tag(l)
+                        }
+                    }
                 }
 
                 Section("정리") {

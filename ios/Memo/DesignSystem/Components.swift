@@ -75,7 +75,7 @@ struct MemoCardView: View {
 
 // Primary 버튼
 struct PrimaryButton: View {
-    let title: String
+    let title: LocalizedStringKey
     var enabled: Bool = true
     let action: () -> Void
     var body: some View {

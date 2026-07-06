@@ -34,6 +34,23 @@ struct MemoListView: View {
                     }
                     .padding(.top, Space.x2)
 
+                    // 메모 본문 검색(로컬 필터). 네비바 숨김 UI라 .searchable 대신 커스텀 필드.
+                    HStack(spacing: Space.x2) {
+                        Image(systemName: "magnifyingglass").foregroundStyle(AppColor.textTertiary)
+                        TextField("메모 검색", text: $vm.searchText)
+                            .foregroundStyle(AppColor.textPrimary)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                        if !vm.searchText.isEmpty {
+                            Button { vm.searchText = "" } label: {
+                                Image(systemName: "xmark.circle.fill").foregroundStyle(AppColor.textTertiary)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, Space.x3).padding(.vertical, Space.x3)
+                    .background(AppColor.fieldBg)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: Space.x2) {
                             // "전체" + 사용순 카테고리. 많으면 상위 N개만 + "더보기"로 접기.
@@ -42,14 +59,16 @@ struct MemoListView: View {
                             let showAll = vm.chipsExpanded || catChips.count <= limit
                             let visible = showAll ? catChips : Array(catChips.prefix(limit))
 
-                            CategoryChip(label: "전체", selected: vm.selectedFilter == "전체")
+                            // "전체" sentinel은 로직값 유지, 표시만 번역(CategoryChip은 verbatim).
+                            CategoryChip(label: String(localized: "전체"), selected: vm.selectedFilter == "전체")
                                 .onTapGesture { vm.selectFilter("전체") }
                             ForEach(visible, id: \.self) { f in
-                                CategoryChip(label: f, selected: f == vm.selectedFilter)
+                                CategoryChip(label: f, selected: f == vm.selectedFilter)   // 카테고리명=데이터, 번역 안 함
                                     .onTapGesture { vm.selectFilter(f) }
                             }
                             if catChips.count > limit {
-                                CategoryChip(label: showAll ? "접기" : "더보기 \(catChips.count - limit)",
+                                CategoryChip(label: showAll ? String(localized: "접기")
+                                                             : String(localized: "더보기 \(catChips.count - limit)"),
                                              selected: false)
                                     .onTapGesture { vm.chipsExpanded.toggle() }
                             }

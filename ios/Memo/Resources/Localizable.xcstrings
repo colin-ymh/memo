@@ -1,0 +1,216 @@
+{
+  "sourceLanguage" : "ko",
+  "strings" : {
+    "(제목 없음)" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "(No title)" } } }
+    },
+    "＋ 카테고리" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "＋ Category" } } }
+    },
+    "＋ 를 눌러 첫 메모를 남겨보세요" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Tap ＋ to write your first memo" } } }
+    },
+    "Apple 로그인 취소/실패: %@" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Apple sign-in canceled/failed: %@" } } }
+    },
+    "Apple 토큰을 읽지 못했습니다." : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Couldn't read the Apple token." } } }
+    },
+    "English" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "English" } } }
+    },
+    "Google로 계속" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Continue with Google" } } }
+    },
+    "개발용: 익명 로그인" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Dev: anonymous sign-in" } } }
+    },
+    "같은 이름이 이미 있으면 실패해요. 그럴 땐 병합을 쓰세요." : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Fails if the name already exists. Use merge instead." } } }
+    },
+    "계정" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Account" } } }
+    },
+    "계정 삭제" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete Account" } } }
+    },
+    "계정과 모든 메모·카테고리가 영구 삭제됩니다." : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Your account and all memos & categories are permanently deleted." } } }
+    },
+    "계정을 삭제할까요? 되돌릴 수 없어요." : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete your account? This can't be undone." } } }
+    },
+    "관련 메모" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Related Memos" } } }
+    },
+    "관련 메모 찾는 중…" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Finding related memos…" } } }
+    },
+    "카테고리" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Category" } } }
+    },
+    "카테고리 검색" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Search categories" } } }
+    },
+    "카테고리 관리" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Manage Categories" } } }
+    },
+    "다크" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Dark" } } }
+    },
+    "닫기" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Close" } } }
+    },
+    "더보기" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "More" } } }
+    },
+    "더보기 %lld" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "More %lld" } } }
+    },
+    "라이트" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Light" } } }
+    },
+    "로그아웃" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Sign out" } } }
+    },
+    "로그인" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Sign-in" } } }
+    },
+    "메모" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Memos" } } }
+    },
+    "메모 %lld" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld memos" } } }
+    },
+    "메모 검색" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Search memos" } } }
+    },
+    "메모 편집" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Edit Memo" } } }
+    },
+    "메모를 입력하세요…" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Write a memo…" } } }
+    },
+    "미분류" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Uncategorized" } } }
+    },
+    "병합" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Merge" } } }
+    },
+    "버전" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Version" } } }
+    },
+    "분류 중" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Classifying" } } }
+    },
+    "분류 중…" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Classifying…" } } }
+    },
+    "분류 중… 관련 메모는 분류 후 표시돼요" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Classifying… related memos appear afterward" } } }
+    },
+    "삭제" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete" } } }
+    },
+    "새 메모" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "New Memo" } } }
+    },
+    "새 카테고리" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "New Category" } } }
+    },
+    "생각을 적으면 AI가 정리해요" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Jot a thought — AI sorts it out" } } }
+    },
+    "설정" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Settings" } } }
+    },
+    "시스템" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "System" } } }
+    },
+    "아직 메모가 없어요" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "No memos yet" } } }
+    },
+    "아직 연결된 메모가 없어요" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "No linked memos yet" } } }
+    },
+    "아직 카테고리가 없어요." : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "No categories yet." } } }
+    },
+    "앱 정보" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "About" } } }
+    },
+    "어느 카테고리로 병합할까요?" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Merge into which category?" } } }
+    },
+    "오프라인 · 저장된 메모 표시 중" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Offline · showing saved memos" } } }
+    },
+    "이름" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Name" } } }
+    },
+    "이름 변경" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Rename" } } }
+    },
+    "이름변경" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Rename" } } }
+    },
+    "언어" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Language" } } }
+    },
+    "이메일" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Email" } } }
+    },
+    "유사도" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Similarity" } } }
+    },
+    "이 메모를 삭제할까요?" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete this memo?" } } }
+    },
+    "저장" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Save" } } }
+    },
+    "저장하면 AI가 자동으로 분류해요" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "AI classifies it automatically on save" } } }
+    },
+    "전체" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "All" } } }
+    },
+    "접기" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Collapse" } } }
+    },
+    "정리" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Organize" } } }
+    },
+    "제목" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Title" } } }
+    },
+    "추가" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Add" } } }
+    },
+    "취소" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancel" } } }
+    },
+    "편집" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Edit" } } }
+    },
+    "한국어" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Korean" } } }
+    },
+    "행을 왼쪽으로 밀어 이름을 바꾸거나 다른 카테고리로 병합할 수 있어요." : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Swipe a row left to rename or merge it into another category." } } }
+    },
+    "화면" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Display" } } }
+    },
+    "화면 테마" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Theme" } } }
+    },
+    "%@(으)로 병합" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Merge into %@" } } }
+    },
+    "\"%@\"의 메모가 대상으로 옮겨지고 이 카테고리는 삭제됩니다." : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Memos in \"%@\" move to the target and this category is deleted." } } }
+    }
+  },
+  "version" : "1.0"
+}

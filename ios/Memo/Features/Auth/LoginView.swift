@@ -36,12 +36,12 @@ struct LoginView: View {
                             let idToken = String(data: tokenData, encoding: .utf8),
                             let nonce = currentNonce
                         else {
-                            auth.lastError = "Apple 토큰을 읽지 못했습니다."
+                            auth.lastError = String(localized: "Apple 토큰을 읽지 못했습니다.")
                             return
                         }
                         Task { await auth.signInWithApple(idToken: idToken, nonce: nonce) }
                     case .failure(let error):
-                        auth.lastError = "Apple 로그인 취소/실패: \(error.localizedDescription)"
+                        auth.lastError = String(localized: "Apple 로그인 취소/실패: \(error.localizedDescription)")
                     }
                 }
                 .signInWithAppleButtonStyle(scheme == .dark ? .white : .black)

@@ -130,7 +130,7 @@ struct MemoDetailView: View {
                 Text(rel.snippet).font(.appCaption).foregroundStyle(AppColor.textSecondary).lineLimit(1)
             }
             let cat = vm.categoryName(rel.categoryId)
-            Text("\(cat.map { "\($0) · " } ?? "")유사도 \(String(format: "%.2f", rel.similarity))")
+            Text(verbatim: "\(cat.map { "\($0) · " } ?? "")\(String(localized: "유사도")) \(String(format: "%.2f", rel.similarity))")
                 .font(.appFootnote).foregroundStyle(AppColor.textTertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

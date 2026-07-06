@@ -12,6 +12,12 @@
 	<string>6.0</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<!-- 지원 로컬라이제이션 — 설정 언어 오버라이드(en)가 번들에서 로드되도록 명시 -->
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>ko</string>
+		<string>en</string>
+	</array>
 	<key>CFBundleName</key>
 	<string>memo</string>
 	<key>CFBundleDisplayName</key>
