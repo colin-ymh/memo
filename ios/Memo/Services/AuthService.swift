@@ -12,6 +12,8 @@ final class AuthService {
     }
 
     private(set) var status: Status = .loading
+    private(set) var email: String?
+    private(set) var provider: String?
     var emailSent = false
     var lastError: String?
 
@@ -20,6 +22,7 @@ final class AuthService {
     func start() async {
         // 저장된 세션 복원
         if let session = try? await auth.session {
+            setUser(session.user)
             status = .signedIn(userId: session.user.id)
         } else {
             status = .signedOut
@@ -29,14 +32,21 @@ final class AuthService {
             switch change.event {
             case .signedIn, .tokenRefreshed, .initialSession:
                 if let user = change.session?.user {
+                    setUser(user)
                     status = .signedIn(userId: user.id)
                 }
             case .signedOut:
+                email = nil; provider = nil
                 status = .signedOut
             default:
                 break
             }
         }
+    }
+
+    private func setUser(_ user: User) {
+        email = user.email
+        provider = user.appMetadata["provider"]?.stringValue
     }
 
     // Google OAuth — 외부 브라우저(ASWebAuthenticationSession) 세션. 콘솔 설정 필요.
@@ -83,6 +93,20 @@ final class AuthService {
 
     func signOut() async {
         try? await auth.signOut()
+    }
+
+    // 계정 삭제 — delete-account Edge Function 호출(세션 JWT 자동 첨부) → 로그아웃.
+    func deleteAccount() async -> Bool {
+        lastError = nil
+        do {
+            try await SupabaseManager.client.functions.invoke("delete-account")
+            await signOut()
+            status = .signedOut
+            return true
+        } catch {
+            lastError = "계정 삭제 실패: \(error.localizedDescription)"
+            return false
+        }
     }
 
     // 개발용: 익명 로그인(설정 없이 즉시 세션 → RLS/AI 파이프라인 검증). Supabase Anonymous 토글 필요.

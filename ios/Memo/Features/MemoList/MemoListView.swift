@@ -5,6 +5,7 @@ struct MemoListView: View {
     @State private var vm = MemoListViewModel()
     @State private var net = NetworkMonitor()
     @State private var showCompose = false
+    @State private var showSettings = false
 
     var body: some View {
         NavigationStack {
@@ -25,8 +26,11 @@ struct MemoListView: View {
                     HStack(alignment: .firstTextBaseline) {
                         Text("메모").font(.appLargeTitle).foregroundStyle(AppColor.textPrimary)
                         Spacer()
-                        Button("로그아웃") { Task { await auth.signOut() } }
-                            .font(.appCaption).foregroundStyle(AppColor.textSecondary)
+                        Button { showSettings = true } label: {
+                            Image(systemName: "gearshape")
+                                .font(.system(size: 20))
+                                .foregroundStyle(AppColor.textSecondary)
+                        }
                     }
                     .padding(.top, Space.x2)
 
@@ -92,6 +96,9 @@ struct MemoListView: View {
             ComposeView { content in
                 await vm.create(content: content)
             }
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsView(auth: auth)
         }
     }
 
