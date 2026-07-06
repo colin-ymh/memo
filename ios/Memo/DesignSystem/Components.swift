@@ -49,11 +49,18 @@ struct MemoCardView: View {
     let preview: String
     var meta: String? = nil
     var classifying: Bool = false
+    var pinned: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.appHeadline).foregroundStyle(AppColor.textPrimary)
-                .lineLimit(1)
+            HStack(spacing: 6) {
+                if pinned {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: 12)).foregroundStyle(AppColor.textTertiary)
+                }
+                Text(title).font(.appHeadline).foregroundStyle(AppColor.textPrimary)
+                    .lineLimit(1)
+            }
             Text(preview).font(.appSubhead).foregroundStyle(AppColor.textSecondary)
                 .lineLimit(2)
             Spacer(minLength: 4)

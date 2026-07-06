@@ -47,6 +47,7 @@ enum PendingOp: Codable, Sendable {
     case update(id: UUID, content: String)
     case delete(id: UUID)
     case setCategory(id: UUID, categoryId: UUID?)
+    case setPinned(id: UUID, pinned: Bool)
 }
 
 extension JSONDecoder {

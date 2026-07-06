@@ -10,6 +10,7 @@ protocol MemoRepository: Sendable {
     func softDeleteMemo(id: UUID) async throws
     func relatedMemos(memoId: UUID) async throws -> [RelatedMemo]
     func setCategory(memoId: UUID, categoryId: UUID?) async throws
+    func setPinned(memoId: UUID, pinned: Bool) async throws
     func createCategory(name: String) async throws -> Category
     func renameCategory(id: UUID, name: String) async throws
     func mergeCategory(source: UUID, into target: UUID) async throws
@@ -24,6 +25,7 @@ private struct MemoRow: Decodable {
     let created_at: String
     let updated_at: String
     let deleted_at: String?
+    let is_pinned: Bool?
 }
 private struct CategoryRow: Decodable {
     let id: UUID
@@ -44,13 +46,14 @@ private func parseDate(_ s: String?) -> Date {
 
 struct SupabaseMemoRepository: MemoRepository {
     private var client: SupabaseClient { SupabaseManager.client }
-    private let selectCols = "id,content,category_id,embedding_model,created_at,updated_at,deleted_at"
+    private let selectCols = "id,content,category_id,embedding_model,created_at,updated_at,deleted_at,is_pinned"
 
     func fetchMemos() async throws -> [Memo] {
         let rows: [MemoRow] = try await client
             .from("memos")
             .select(selectCols)
             .is("deleted_at", value: nil)
+            .order("is_pinned", ascending: false)
             .order("created_at", ascending: false)
             .execute()
             .value
@@ -156,10 +159,19 @@ struct SupabaseMemoRepository: MemoRepository {
             .execute()
     }
 
+    func setPinned(memoId: UUID, pinned: Bool) async throws {
+        struct Upd: Encodable { let is_pinned: Bool }
+        try await client.from("memos")
+            .update(Upd(is_pinned: pinned))
+            .eq("id", value: memoId)
+            .execute()
+    }
+
     private func map(_ r: MemoRow) -> Memo {
         Memo(id: r.id, content: r.content, categoryId: r.category_id,
              embeddingModel: r.embedding_model,
              createdAt: parseDate(r.created_at), updatedAt: parseDate(r.updated_at),
-             deletedAt: r.deleted_at.map { parseDate($0) })
+             deletedAt: r.deleted_at.map { parseDate($0) },
+             isPinned: r.is_pinned ?? false)
     }
 }

@@ -29,6 +29,16 @@ struct MemoListView: View {
                     HStack(alignment: .firstTextBaseline) {
                         Text("메모").font(.appLargeTitle).foregroundStyle(AppColor.textPrimary)
                         Spacer()
+                        Menu {
+                            Picker("정렬", selection: $vm.sortOrder) {
+                                ForEach(MemoSort.allCases) { s in Text(s.label).tag(s) }
+                            }
+                            Toggle("미분류만", isOn: $vm.uncategorizedOnly)
+                        } label: {
+                            Image(systemName: "line.3.horizontal.decrease.circle")
+                                .font(.system(size: 20))
+                                .foregroundStyle(AppColor.textSecondary)
+                        }
                         Button { showSettings = true } label: {
                             Image(systemName: "gearshape")
                                 .font(.system(size: 20))
@@ -99,7 +109,7 @@ struct MemoListView: View {
                                          onDelete: { pendingDeleteID = c.id }) {
                                 NavigationLink(value: c.memo) {
                                     MemoCardView(title: c.title, preview: c.preview,
-                                                 meta: c.meta, classifying: c.classifying)
+                                                 meta: c.meta, classifying: c.classifying, pinned: c.pinned)
                                 }
                                 .buttonStyle(.plain)
                             }

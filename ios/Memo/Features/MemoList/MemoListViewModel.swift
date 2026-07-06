@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Supabase
 
 struct MemoCardData: Identifiable, Sendable {
@@ -8,6 +9,20 @@ struct MemoCardData: Identifiable, Sendable {
     let preview: String
     let meta: String?
     let classifying: Bool
+    let pinned: Bool
+}
+
+// 목록 정렬 기준.
+enum MemoSort: String, CaseIterable, Identifiable {
+    case newest, oldest, updated
+    var id: String { rawValue }
+    var label: LocalizedStringKey {
+        switch self {
+        case .newest: "최신순"
+        case .oldest: "오래된순"
+        case .updated: "수정순"
+        }
+    }
 }
 
 @MainActor
@@ -20,6 +35,8 @@ final class MemoListViewModel {
     var categoryCounts: [UUID: Int] = [:]  // 카테고리별 메모 수(사용순 정렬·관리화면용)
     var selectedFilter = "전체"
     var searchText = "" { didSet { rebuild() } }   // 메모 본문 검색(로컬 필터)
+    var sortOrder: MemoSort = .newest { didSet { rebuild() } }
+    var uncategorizedOnly = false { didSet { rebuild() } }
     var isLoading = false
     var offline = false
     var errorText: String?
@@ -133,6 +150,8 @@ final class MemoListViewModel {
         rel.locale = AppSettings.shared.appLanguage.locale   // 상대시간도 앱 언어 따름
         let q = searchText.trimmingCharacters(in: .whitespaces)
         let filtered = memos.filter { m in
+            // 미분류만 보기
+            if uncategorizedOnly, m.categoryId != nil { return false }
             // 카테고리 필터
             let catOK: Bool
             if selectedFilter == "전체" { catOK = true }
@@ -142,13 +161,22 @@ final class MemoListViewModel {
             // 검색 필터(본문) — AND 결합
             return q.isEmpty || m.content.localizedCaseInsensitiveContains(q)
         }
-        cards = filtered.map { m in
+        let sorted = filtered.sorted { a, b in
+            // 핀 우선(#3에서 isPinned 추가 후 유효), 그다음 정렬 기준
+            if a.isPinned != b.isPinned { return a.isPinned && !b.isPinned }
+            switch sortOrder {
+            case .newest: return a.createdAt > b.createdAt
+            case .oldest: return a.createdAt < b.createdAt
+            case .updated: return a.updatedAt > b.updatedAt
+            }
+        }
+        cards = sorted.map { m in
             let cat = m.categoryId.flatMap { categoryNames[$0] }
             let time = rel.localizedString(for: m.createdAt, relativeTo: Date())
             let meta = cat.map { "\($0) · \(time)" } ?? time
             return MemoCardData(id: m.id, memo: m, title: m.title.isEmpty ? String(localized: "(제목 없음)") : m.title,
                                 preview: m.preview, meta: meta,
-                                classifying: !m.isClassified)
+                                classifying: !m.isClassified, pinned: m.isPinned)
         }
         watchClassifying()
     }
@@ -199,6 +227,7 @@ final class MemoListViewModel {
         case let .update(id, content):        try await repo.updateMemo(memoId: id, content: content)
         case let .delete(id):                 try await repo.softDeleteMemo(id: id)
         case let .setCategory(id, categoryId): try await repo.setCategory(memoId: id, categoryId: categoryId)
+        case let .setPinned(id, pinned):       try await repo.setPinned(memoId: id, pinned: pinned)
         }
     }
 
@@ -217,10 +246,23 @@ final class MemoListViewModel {
                 memos.removeAll { $0.id == id }
             case let .setCategory(id, categoryId):
                 if let i = memos.firstIndex(where: { $0.id == id }) { memos[i].categoryId = categoryId }
+            case let .setPinned(id, pinned):
+                if let i = memos.firstIndex(where: { $0.id == id }) { memos[i].isPinned = pinned }
             }
         }
         rebuild()
     }
+
+    // 핀 토글(로컬 우선 + 큐). 정렬 최상단 반영은 rebuild.
+    func togglePin(memoId: UUID) async {
+        guard let idx = memos.firstIndex(where: { $0.id == memoId }) else { return }
+        let pinned = !memos[idx].isPinned
+        memos[idx].isPinned = pinned; rebuild()
+        enqueue(.setPinned(id: memoId, pinned: pinned))
+        await persistCache(); await flush()
+    }
+
+    func isPinned(_ id: UUID) -> Bool { memos.first { $0.id == id }?.isPinned ?? false }
 
     // 카테고리 변경(사용자 오버라이드). 로컬 우선 + 큐.
     func changeCategory(memoId: UUID, to categoryId: UUID?) async {

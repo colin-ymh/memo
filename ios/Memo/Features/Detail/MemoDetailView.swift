@@ -115,6 +115,12 @@ struct MemoDetailView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button { showEdit = true } label: { Label("편집", systemImage: "pencil") }
+                    Button { Task { await vm.togglePin(memoId: memo.id) } } label: {
+                        vm.isPinned(memo.id)
+                            ? Label("고정 해제", systemImage: "pin.slash")
+                            : Label("고정", systemImage: "pin")
+                    }
+                    ShareLink(item: content) { Label("공유", systemImage: "square.and.arrow.up") }
                     Button(role: .destructive) { showDeleteConfirm = true } label: {
                         Label("삭제", systemImage: "trash")
                     }

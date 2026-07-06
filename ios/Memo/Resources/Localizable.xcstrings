@@ -40,6 +40,30 @@
     "계정을 삭제할까요? 되돌릴 수 없어요." : {
       "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete your account? This can't be undone." } } }
     },
+    "공유" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Share" } } }
+    },
+    "정렬" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Sort" } } }
+    },
+    "최신순" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Newest" } } }
+    },
+    "오래된순" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Oldest" } } }
+    },
+    "수정순" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Recently edited" } } }
+    },
+    "미분류만" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Uncategorized only" } } }
+    },
+    "고정" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Pin" } } }
+    },
+    "고정 해제" : {
+      "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Unpin" } } }
+    },
     "관련 메모" : {
       "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Related Memos" } } }
     },
