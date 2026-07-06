@@ -11,5 +11,5 @@ DerivedData/
 .build/
 _preview*.png
 *.xcworkspace/xcuserdata/
-ios/build/
-ios/exportOptions.plist
+build/
+exportOptions.plist
