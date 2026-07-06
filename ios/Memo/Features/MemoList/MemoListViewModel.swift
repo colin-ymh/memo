@@ -18,7 +18,12 @@ final class MemoListViewModel {
     var chips: [String] = ["전체"]
     var selectedFilter = "전체"
     var isLoading = false
+    var offline = false
     var errorText: String?
+
+    private let store = LocalStore()
+    private var pendingOps: [PendingOp] = []
+    private var didLoadQueue = false
 
     private var memos: [Memo] = []
     private var categoryNames: [UUID: String] = [:]
@@ -33,30 +38,49 @@ final class MemoListViewModel {
     }()
 
     func load() async {
+        // 1) 캐시 먼저 — 앱 열면 즉시 표시(오프라인서도 열람)
+        if memos.isEmpty, let snap = await store.loadSnapshot() {
+            apply(memos: snap.memos, categories: snap.categories)
+        }
+        // 2) 대기 큐 복원(1회)
+        if !didLoadQueue { didLoadQueue = true; pendingOps = await store.loadQueue() }
+        // 3) 서버 갱신 → 4) 밀린 쓰기 flush
+        await refreshFromServer()
+        await flush()
+    }
+
+    private func refreshFromServer() async {
         isLoading = true; defer { isLoading = false }
         do {
             async let m = repo.fetchMemos()
             async let c = repo.fetchCategories()
             let (mm, cc) = try await (m, c)
-            categoryNames = Dictionary(cc.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
-            allCategories = cc.sorted { $0.name < $1.name }
-            memos = mm
-            chips = ["전체"] + cc.map(\.name)
-            rebuild()
+            apply(memos: mm, categories: cc)
+            replayPending()   // 아직 안 밀린 로컬 변경을 서버데이터 위에 재적용(낙관적 유지)
+            offline = false
+            await store.saveSnapshot(LocalSnapshot(memos: memos, categories: allCategories))
         } catch {
-            errorText = error.localizedDescription
+            offline = true
+            if cards.isEmpty { errorText = error.localizedDescription }
         }
     }
 
-    // 저장(로그인된 사용자로 INSERT). 낙관적으로 목록 맨 앞에 추가 → 분류는 서버가 채움(Realtime 반영).
+    private func apply(memos mm: [Memo], categories cc: [Category]) {
+        categoryNames = Dictionary(cc.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
+        allCategories = cc.sorted { $0.name < $1.name }
+        memos = mm
+        chips = ["전체"] + cc.map(\.name)
+        rebuild()
+    }
+
+    // 저장 = 로컬 우선(즉시 반영) + 큐 적재 → 온라인이면 즉시 flush. 분류는 서버 insert 후 Realtime.
     func create(content: String) async {
-        do {
-            let memo = try await repo.createMemo(content: content)
-            memos.insert(memo, at: 0)
-            rebuild()
-        } catch {
-            errorText = error.localizedDescription
-        }
+        let id = UUID(); let now = Date()
+        memos.insert(Memo(id: id, content: content, categoryId: nil, embeddingModel: nil,
+                          createdAt: now, updatedAt: now, deletedAt: nil), at: 0)
+        rebuild()
+        enqueue(.create(id: id, content: content, createdAt: now))
+        await persistCache(); await flush()
     }
 
     // Realtime: memos 변경 시 재로딩(분류 완료 → category/embedding 채워짐 반영).
@@ -115,26 +139,76 @@ final class MemoListViewModel {
 
     func updateMemo(memoId: UUID, content: String) async {
         if let i = memos.firstIndex(where: { $0.id == memoId }) {
-            memos[i].content = content; rebuild()
+            memos[i].content = content; memos[i].updatedAt = Date(); rebuild()
         }
-        do { try await repo.updateMemo(memoId: memoId, content: content) }
-        catch { errorText = error.localizedDescription; await load() }
+        enqueue(.update(id: memoId, content: content))
+        await persistCache(); await flush()
     }
 
     func deleteMemo(_ id: UUID) async {
         memos.removeAll { $0.id == id }; rebuild()
-        do { try await repo.softDeleteMemo(id: id) }
-        catch { errorText = error.localizedDescription; await load() }
+        enqueue(.delete(id: id))
+        await persistCache(); await flush()
     }
 
-    // 메모의 카테고리 변경(사용자 오버라이드). 로컬 즉시 반영 + 서버 저장.
+    // 오프라인 쓰기 큐 -------------------------------------------------------
+    private func enqueue(_ op: PendingOp) { pendingOps.append(op) }
+
+    private func persistCache() async {
+        await store.saveSnapshot(LocalSnapshot(memos: memos, categories: allCategories))
+        await store.saveQueue(pendingOps)
+    }
+
+    // 밀린 쓰기를 순서대로 서버에 반영. 실패(오프라인 등) 시 그 지점서 멈추고 큐 유지.
+    func flush() async {
+        guard !pendingOps.isEmpty else { return }
+        var remaining = pendingOps
+        while let op = remaining.first {
+            do { try await applyRemote(op); remaining.removeFirst() }
+            catch { break }
+        }
+        let progressed = remaining.count != pendingOps.count
+        pendingOps = remaining
+        await store.saveQueue(pendingOps)
+        if progressed && pendingOps.isEmpty { await refreshFromServer() } // 다 밀렸으면 서버 최신으로
+    }
+
+    private func applyRemote(_ op: PendingOp) async throws {
+        switch op {
+        case let .create(id, content, _):     try await repo.createMemo(id: id, content: content)
+        case let .update(id, content):        try await repo.updateMemo(memoId: id, content: content)
+        case let .delete(id):                 try await repo.softDeleteMemo(id: id)
+        case let .setCategory(id, categoryId): try await repo.setCategory(memoId: id, categoryId: categoryId)
+        }
+    }
+
+    // 서버 데이터 위에 아직 안 밀린 로컬 변경 재적용(낙관적 유지).
+    private func replayPending() {
+        for op in pendingOps {
+            switch op {
+            case let .create(id, content, createdAt):
+                if !memos.contains(where: { $0.id == id }) {
+                    memos.insert(Memo(id: id, content: content, categoryId: nil, embeddingModel: nil,
+                                      createdAt: createdAt, updatedAt: createdAt, deletedAt: nil), at: 0)
+                }
+            case let .update(id, content):
+                if let i = memos.firstIndex(where: { $0.id == id }) { memos[i].content = content }
+            case let .delete(id):
+                memos.removeAll { $0.id == id }
+            case let .setCategory(id, categoryId):
+                if let i = memos.firstIndex(where: { $0.id == id }) { memos[i].categoryId = categoryId }
+            }
+        }
+        rebuild()
+    }
+
+    // 카테고리 변경(사용자 오버라이드). 로컬 우선 + 큐.
     func changeCategory(memoId: UUID, to categoryId: UUID?) async {
         if let idx = memos.firstIndex(where: { $0.id == memoId }) {
-            memos[idx].categoryId = categoryId
-            rebuild()
+            memos[idx].categoryId = categoryId; rebuild()
         }
-        do { try await repo.setCategory(memoId: memoId, categoryId: categoryId) }
-        catch { errorText = error.localizedDescription; await load() }
+        enqueue(.setCategory(id: memoId, categoryId: categoryId))
+        await persistCache(); await flush()
     }
 
     // 새 사용자 카테고리 생성(이미 있으면 재사용).

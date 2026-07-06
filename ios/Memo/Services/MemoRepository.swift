@@ -5,7 +5,7 @@ import Supabase
 protocol MemoRepository: Sendable {
     func fetchMemos() async throws -> [Memo]
     func fetchCategories() async throws -> [Category]
-    func createMemo(content: String) async throws -> Memo
+    func createMemo(id: UUID, content: String) async throws
     func updateMemo(memoId: UUID, content: String) async throws
     func softDeleteMemo(id: UUID) async throws
     func relatedMemos(memoId: UUID) async throws -> [RelatedMemo]
@@ -64,21 +64,20 @@ struct SupabaseMemoRepository: MemoRepository {
         return rows.map { Category(id: $0.id, name: $0.name, createdByAi: $0.created_by_ai) }
     }
 
-    func createMemo(content: String) async throws -> Memo {
+    // 클라이언트가 id를 생성해 넘긴다 → 오프라인 생성분이 온라인 flush돼도 같은 id(서버id=로컬id).
+    func createMemo(id: UUID, content: String) async throws {
         guard let userId = client.auth.currentUser?.id else {
             throw NSError(domain: "memo", code: 401,
                           userInfo: [NSLocalizedDescriptionKey: "로그인 필요"])
         }
         // RLS: user_id = auth.uid() 필수(스키마에 default 없음)라 명시 전달.
-        struct Insert: Encodable { let user_id: UUID; let content: String }
-        let row: MemoRow = try await client
+        // upsert(ignoreDuplicates): flush 재시도가 중복 insert돼도 PK 충돌 없이 멱등.
+        struct Insert: Encodable { let id: UUID; let user_id: UUID; let content: String }
+        try await client
             .from("memos")
-            .insert(Insert(user_id: userId, content: content))
-            .select(selectCols)
-            .single()
+            .upsert(Insert(id: id, user_id: userId, content: content),
+                    onConflict: "id", ignoreDuplicates: true)
             .execute()
-            .value
-        return map(row)
     }
 
     // 주의: 내용 편집은 재분류를 트리거하지 않는다(webhook은 INSERT 전용).

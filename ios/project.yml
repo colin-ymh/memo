@@ -26,6 +26,8 @@ targets:
       base:
         INFOPLIST_FILE: Memo/Support/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: com.duovelop.memo
+        # MVP: iPhone 전용 (iPad 아이콘/멀티태스킹 방향 요건 회피)
+        TARGETED_DEVICE_FAMILY: "1"
         # 시뮬레이터 개발: 서명 없이. 실기기/배포 시 팀 설정 필요.
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: 64SH5H5CW4

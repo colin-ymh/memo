@@ -3,6 +3,7 @@ import SwiftUI
 struct MemoListView: View {
     let auth: AuthService
     @State private var vm = MemoListViewModel()
+    @State private var net = NetworkMonitor()
     @State private var showCompose = false
 
     var body: some View {
@@ -38,6 +39,18 @@ struct MemoListView: View {
                         }
                     }
 
+                    if vm.offline {
+                        HStack(spacing: Space.x2) {
+                            Image(systemName: "wifi.slash")
+                            Text("오프라인 · 저장된 메모 표시 중")
+                        }
+                        .font(.appCaption).foregroundStyle(AppColor.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(Space.x3)
+                        .background(AppColor.bgSurface)
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    }
+
                     if vm.cards.isEmpty && !vm.isLoading {
                         emptyState
                     } else {
@@ -70,6 +83,8 @@ struct MemoListView: View {
             .padding(Space.x5)
         }
         .task {
+            net.onReconnect = { Task { await vm.flush() } }
+            net.start()
             await vm.load()
             await vm.startRealtime()
         }
