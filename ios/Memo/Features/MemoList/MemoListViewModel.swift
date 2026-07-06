@@ -35,8 +35,9 @@ final class MemoListViewModel {
     let repo: MemoRepository = SupabaseMemoRepository()
 
     func categoryName(_ id: UUID?) -> String? { id.flatMap { categoryNames[$0] } }
+    // locale은 rebuild()에서 앱 언어 설정(AppSettings.appLanguage)에 맞춰 주입.
     private let rel: RelativeDateTimeFormatter = {
-        let f = RelativeDateTimeFormatter(); f.locale = Locale(identifier: "ko_KR"); f.unitsStyle = .short
+        let f = RelativeDateTimeFormatter(); f.unitsStyle = .short
         return f
     }()
 
@@ -129,6 +130,7 @@ final class MemoListViewModel {
     }
 
     private func rebuild() {
+        rel.locale = AppSettings.shared.appLanguage.locale   // 상대시간도 앱 언어 따름
         let q = searchText.trimmingCharacters(in: .whitespaces)
         let filtered = memos.filter { m in
             // 카테고리 필터
