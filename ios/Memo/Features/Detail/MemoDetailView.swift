@@ -23,7 +23,8 @@ struct MemoDetailView: View {
     }
 
     private var displayTitle: String {
-        content.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? ""
+        // 제목은 평문 취급 — 카드와 동일하게 마크다운 기호 스트립(본문만 풀 렌더).
+        (content.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? "").markdownStripped
     }
     private var displayBody: String {
         let p = content.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: true)
