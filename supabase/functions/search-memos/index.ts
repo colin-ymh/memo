@@ -69,8 +69,8 @@ Deno.serve(async (req) => {
       match_count: count,
     });
     if (error) throw error;
-    const results = ((data ?? []) as { id: string; content: string; category_id: string | null; similarity: number }[])
-      .filter((r) => r.similarity >= SIMILARITY_FLOOR);
+    const all = (data ?? []) as { id: string; content: string; category_id: string | null; similarity: number }[];
+    const results = all.filter((r) => r.similarity >= SIMILARITY_FLOOR);
     return Response.json({ results }, { headers: cors });
   } catch (e) {
     console.error("search-memos 실패:", e);

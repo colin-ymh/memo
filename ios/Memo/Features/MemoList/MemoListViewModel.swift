@@ -200,7 +200,7 @@ final class MemoListViewModel {
         guard semanticMode, !q.isEmpty else { semanticHits = nil; rebuild(); return }
         searching = true; defer { searching = false }
         do {
-            let hits = try await repo.searchSemantic(query: q, count: 30)
+            let hits = try await repo.searchSemantic(query: q, count: 12)
             semanticHits = hits.map(\.id)
         } catch {
             errorText = error.localizedDescription
