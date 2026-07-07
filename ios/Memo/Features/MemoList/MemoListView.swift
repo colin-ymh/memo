@@ -220,14 +220,21 @@ struct MemoListView: View {
     // 스크롤 방향으로 검색창 접힘/펼침. y=contentOffset.y(최상단 0, 내리면 증가).
     @MainActor private func handleScroll(_ y: CGFloat) {
         let delta = y - lastOffset
-        if y < 12 {                                    // 최상단 근처 → 항상 표시
-            if searchCollapsed { withAnimation(.easeInOut(duration: 0.2)) { searchCollapsed = false } }
-        } else if delta > 8 {                          // 내림 → 숨김
-            if !searchCollapsed { withAnimation(.easeInOut(duration: 0.2)) { searchCollapsed = true } }
-        } else if delta < -8 {                         // 올림 → 표시
-            if searchCollapsed { withAnimation(.easeInOut(duration: 0.2)) { searchCollapsed = false } }
-        }
         lastOffset = y
+        // 상단 존(y<60): 항상 표시 → 짧은 플릭이 "사라지다 말기" 방지(부분 애니 안 생김).
+        if y < 60 {
+            setSearchCollapsed(false)
+        } else if delta > 6 {                          // 충분히 아래로 → 숨김
+            setSearchCollapsed(true)
+        } else if delta < -16 {                        // 뚜렷이 위로 → 표시(바운스 지터 컷)
+            setSearchCollapsed(false)
+        }
+    }
+
+    // 상태 바뀔 때만 애니(진행 중 애니 재시작·중단으로 인한 부분표시 방지).
+    @MainActor private func setSearchCollapsed(_ v: Bool) {
+        guard searchCollapsed != v else { return }
+        withAnimation(.easeInOut(duration: 0.22)) { searchCollapsed = v }
     }
 
     private var emptyState: some View {
