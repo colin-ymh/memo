@@ -1,14 +1,21 @@
 import SwiftUI
 
+// List 스크롤 offset 추적용(검색창 접힘 방향 감지).
+private struct ScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat { 0 }
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
 struct MemoListView: View {
     let auth: AuthService
     @State private var vm = MemoListViewModel()
     @State private var net = NetworkMonitor()
     @State private var showCompose = false
     @State private var showSettings = false
-    @State private var openRowID: UUID?          // 스와이프로 열린 행(한 번에 하나)
     @State private var editingMemo: Memo?         // 스와이프 편집 시트 대상
     @State private var pendingDeleteID: UUID?     // 스와이프 삭제 확인 대상
+    @State private var searchCollapsed = false     // 스크롤 내림 시 검색창 접힘
+    @State private var lastOffset: CGFloat = 0
 
     var body: some View {
         NavigationStack {
@@ -24,119 +31,10 @@ struct MemoListView: View {
         ZStack(alignment: .bottomTrailing) {
             AppColor.bgCanvas.ignoresSafeArea()
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: Space.x4) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text("메모").font(.appLargeTitle).foregroundStyle(AppColor.textPrimary)
-                        Spacer()
-                        Menu {
-                            Picker("정렬", selection: $vm.sortOrder) {
-                                ForEach(MemoSort.allCases) { s in Text(s.label).tag(s) }
-                            }
-                            Toggle("미분류만", isOn: $vm.uncategorizedOnly)
-                        } label: {
-                            Image(systemName: "line.3.horizontal.decrease.circle")
-                                .font(.system(size: 20))
-                                .foregroundStyle(AppColor.textSecondary)
-                        }
-                        Button { showSettings = true } label: {
-                            Image(systemName: "gearshape")
-                                .font(.system(size: 20))
-                                .foregroundStyle(AppColor.textSecondary)
-                        }
-                    }
-                    .padding(.top, Space.x2)
-
-                    // 검색. 네비바 숨김 UI라 .searchable 대신 커스텀 필드.
-                    // 본문(로컬 즉시) / 의미(시맨틱, 제출 시 서버) 모드 토글.
-                    HStack(spacing: Space.x2) {
-                        if vm.searching {
-                            DotSpinner(size: 18)
-                        } else {
-                            Image(systemName: vm.semanticMode ? "sparkle.magnifyingglass" : "magnifyingglass")
-                                .foregroundStyle(AppColor.textTertiary)
-                        }
-                        TextField(vm.semanticMode ? "의미로 검색 (엔터)" : "메모 검색", text: $vm.searchText)
-                            .foregroundStyle(AppColor.textPrimary)
-                            .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
-                            .submitLabel(.search)
-                            .onSubmit { if vm.semanticMode { Task { await vm.runSemanticSearch() } } }
-                        if !vm.searchText.isEmpty {
-                            Button { vm.searchText = "" } label: {
-                                Image(systemName: "xmark.circle.fill").foregroundStyle(AppColor.textTertiary)
-                            }
-                        }
-                        // 의미/본문 모드 토글
-                        Button { vm.semanticMode.toggle() } label: {
-                            Image(systemName: "sparkles")
-                                .foregroundStyle(vm.semanticMode ? AppColor.accent : AppColor.textTertiary)
-                        }
-                    }
-                    .padding(.horizontal, Space.x3).padding(.vertical, Space.x3)
-                    .background(AppColor.fieldBg)
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: Space.x2) {
-                            // "전체" + 사용순 카테고리. 많으면 상위 N개만 + "더보기"로 접기.
-                            let catChips = Array(vm.chips.dropFirst())   // 카테고리(사용순)
-                            let limit = 8
-                            let showAll = vm.chipsExpanded || catChips.count <= limit
-                            let visible = showAll ? catChips : Array(catChips.prefix(limit))
-
-                            // "전체" sentinel은 로직값 유지, 표시만 번역(CategoryChip은 verbatim).
-                            CategoryChip(label: String(localized: "전체"), selected: vm.selectedFilter == "전체")
-                                .onTapGesture { vm.selectFilter("전체") }
-                            ForEach(visible, id: \.self) { f in
-                                CategoryChip(label: f, selected: f == vm.selectedFilter)   // 카테고리명=데이터, 번역 안 함
-                                    .onTapGesture { vm.selectFilter(f) }
-                            }
-                            if catChips.count > limit {
-                                CategoryChip(label: showAll ? String(localized: "접기")
-                                                             : String(localized: "더보기 \(catChips.count - limit)"),
-                                             selected: false)
-                                    .onTapGesture { vm.chipsExpanded.toggle() }
-                            }
-                        }
-                    }
-
-                    if vm.offline {
-                        HStack(spacing: Space.x2) {
-                            Image(systemName: "wifi.slash")
-                            Text("오프라인 · 저장된 메모 표시 중")
-                        }
-                        .font(.appCaption).foregroundStyle(AppColor.textSecondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(Space.x3)
-                        .background(AppColor.bgSurface)
-                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-                    }
-
-                    if vm.cards.isEmpty && !vm.isLoading {
-                        emptyState
-                    } else {
-                        ForEach(vm.cards) { c in
-                            SwipeableRow(rowID: c.id, openRowID: $openRowID,
-                                         onEdit: { editingMemo = c.memo },
-                                         onDelete: { pendingDeleteID = c.id }) {
-                                NavigationLink(value: c.memo) {
-                                    MemoCardView(title: c.title, preview: c.preview,
-                                                 meta: c.meta, classifying: c.classifying, pinned: c.pinned)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-
-                    if let err = vm.errorText {
-                        Text(err).font(.appCaption).foregroundStyle(AppColor.danger)
-                    }
-                }
-                .padding(.horizontal, Space.x5)
-                .padding(.bottom, 100)
+            VStack(spacing: 0) {
+                fixedHeader
+                listOrEmpty
             }
-            .refreshable { await vm.load() }
 
             Button { showCompose = true } label: {
                 Image(systemName: "plus")
@@ -155,9 +53,7 @@ struct MemoListView: View {
             await vm.startRealtime()
         }
         .sheet(isPresented: $showCompose) {
-            ComposeView { content in
-                await vm.create(content: content)
-            }
+            ComposeView { content in await vm.create(content: content) }
         }
         .sheet(isPresented: $showSettings) {
             SettingsView(auth: auth, vm: vm)
@@ -178,6 +74,174 @@ struct MemoListView: View {
             }
             Button("취소", role: .cancel) {}
         }
+    }
+
+    // 스크롤 밖 고정 헤더: 제목 · 검색(접힘) · 카테고리 칩 · 오프라인 배너
+    private var fixedHeader: some View {
+        VStack(alignment: .leading, spacing: Space.x4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("메모").font(.appLargeTitle).foregroundStyle(AppColor.textPrimary)
+                Spacer()
+                Menu {
+                    Picker("정렬", selection: $vm.sortOrder) {
+                        ForEach(MemoSort.allCases) { s in Text(s.label).tag(s) }
+                    }
+                    Toggle("미분류만", isOn: $vm.uncategorizedOnly)
+                } label: {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                        .font(.system(size: 20)).foregroundStyle(AppColor.textSecondary)
+                }
+                Button { showSettings = true } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 20)).foregroundStyle(AppColor.textSecondary)
+                }
+            }
+            .padding(.top, Space.x2)
+
+            if !searchCollapsed {
+                searchField
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
+            chipsBar
+
+            if vm.offline {
+                HStack(spacing: Space.x2) {
+                    Image(systemName: "wifi.slash")
+                    Text("오프라인 · 저장된 메모 표시 중")
+                }
+                .font(.appCaption).foregroundStyle(AppColor.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(Space.x3)
+                .background(AppColor.bgSurface)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }
+        }
+        .padding(.horizontal, Space.x5)
+        .padding(.bottom, Space.x3)
+    }
+
+    // 검색. 본문(로컬 즉시) / 의미(시맨틱, 제출 시 서버) 모드 토글.
+    private var searchField: some View {
+        HStack(spacing: Space.x2) {
+            if vm.searching {
+                DotSpinner(size: 18)
+            } else {
+                Image(systemName: vm.semanticMode ? "sparkle.magnifyingglass" : "magnifyingglass")
+                    .foregroundStyle(AppColor.textTertiary)
+            }
+            TextField(vm.semanticMode ? "의미로 검색 (엔터)" : "메모 검색", text: $vm.searchText)
+                .foregroundStyle(AppColor.textPrimary)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .submitLabel(.search)
+                .onSubmit { if vm.semanticMode { Task { await vm.runSemanticSearch() } } }
+            if !vm.searchText.isEmpty {
+                Button { vm.searchText = "" } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(AppColor.textTertiary)
+                }
+            }
+            Button { vm.semanticMode.toggle() } label: {
+                Image(systemName: "sparkles")
+                    .foregroundStyle(vm.semanticMode ? AppColor.accent : AppColor.textTertiary)
+            }
+        }
+        .padding(.horizontal, Space.x3).padding(.vertical, Space.x3)
+        .background(AppColor.fieldBg)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    private var chipsBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: Space.x2) {
+                let catChips = Array(vm.chips.dropFirst())   // 카테고리(사용순)
+                let limit = 8
+                let showAll = vm.chipsExpanded || catChips.count <= limit
+                let visible = showAll ? catChips : Array(catChips.prefix(limit))
+
+                CategoryChip(label: String(localized: "전체"), selected: vm.selectedFilter == "전체")
+                    .onTapGesture { vm.selectFilter("전체") }
+                ForEach(visible, id: \.self) { f in
+                    CategoryChip(label: f, selected: f == vm.selectedFilter)
+                        .onTapGesture { vm.selectFilter(f) }
+                }
+                if catChips.count > limit {
+                    CategoryChip(label: showAll ? String(localized: "접기")
+                                                 : String(localized: "더보기 \(catChips.count - limit)"),
+                                 selected: false)
+                        .onTapGesture { vm.chipsExpanded.toggle() }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var listOrEmpty: some View {
+        if vm.cards.isEmpty && !vm.isLoading {
+            emptyState
+            Spacer(minLength: 0)
+        } else {
+            List {
+                // 스크롤 offset 프로브(첫 행) — 검색창 접힘 방향 감지
+                Color.clear.frame(height: 0)
+                    .listRowInsets(EdgeInsets()).listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .background(GeometryReader { g in
+                        Color.clear.preference(key: ScrollOffsetKey.self,
+                                               value: g.frame(in: .named("memolist")).minY)
+                    })
+
+                ForEach(vm.cards) { c in
+                    MemoCardView(title: c.title, preview: c.preview,
+                                 meta: c.meta, classifying: c.classifying, pinned: c.pinned)
+                        .contentShape(Rectangle())
+                        .background(NavigationLink(value: c.memo) { EmptyView() }.opacity(0))
+                        .listRowInsets(EdgeInsets(top: Space.x2, leading: Space.x5,
+                                                  bottom: Space.x2, trailing: Space.x5))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) { pendingDeleteID = c.id } label: {
+                                Label("삭제", systemImage: "trash")
+                            }
+                            Button { editingMemo = c.memo } label: {
+                                Label("편집", systemImage: "pencil")
+                            }.tint(AppColor.accent)
+                        }
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            Button {
+                                Task { await vm.togglePin(memoId: c.id) }
+                            } label: {
+                                Label(c.pinned ? "고정 해제" : "고정",
+                                      systemImage: c.pinned ? "pin.slash" : "pin")
+                            }.tint(AppColor.accent)
+                        }
+                }
+
+                if let err = vm.errorText {
+                    Text(err).font(.appCaption).foregroundStyle(AppColor.danger)
+                        .listRowSeparator(.hidden).listRowBackground(Color.clear)
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .coordinateSpace(name: "memolist")
+            .refreshable { await vm.load() }
+            .onPreferenceChange(ScrollOffsetKey.self) { handleScroll($0) }
+        }
+    }
+
+    // 스크롤 방향으로 검색창 접힘/펼침. deadzone·최상단 가드로 흔들림 억제.
+    private func handleScroll(_ y: CGFloat) {
+        let delta = y - lastOffset
+        if y > -12 {                                   // 최상단 근처 → 항상 표시
+            if searchCollapsed { withAnimation(.easeInOut(duration: 0.2)) { searchCollapsed = false } }
+        } else if delta < -8 {                         // 내림 → 숨김
+            if !searchCollapsed { withAnimation(.easeInOut(duration: 0.2)) { searchCollapsed = true } }
+        } else if delta > 8 {                          // 올림 → 표시
+            if searchCollapsed { withAnimation(.easeInOut(duration: 0.2)) { searchCollapsed = false } }
+        }
+        lastOffset = y
     }
 
     private var emptyState: some View {
