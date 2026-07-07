@@ -1,11 +1,5 @@
 import SwiftUI
 
-// List 스크롤 offset 추적용(검색창 접힘 방향 감지).
-private struct ScrollOffsetKey: PreferenceKey {
-    static var defaultValue: CGFloat { 0 }
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
-}
-
 struct MemoListView: View {
     let auth: AuthService
     @State private var vm = MemoListViewModel()
@@ -118,7 +112,7 @@ struct MemoListView: View {
             }
         }
         .padding(.horizontal, Space.x5)
-        .padding(.bottom, Space.x3)
+        .padding(.bottom, Space.x2)
     }
 
     // 검색. 본문(로컬 즉시) / 의미(시맨틱, 제출 시 서버) 모드 토글.
@@ -182,20 +176,13 @@ struct MemoListView: View {
             Spacer(minLength: 0)
         } else {
             List {
-                // 스크롤 offset 프로브(첫 행) — 검색창 접힘 방향 감지
-                Color.clear.frame(height: 0)
-                    .listRowInsets(EdgeInsets()).listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
-                    .background(GeometryReader { g in
-                        Color.clear.preference(key: ScrollOffsetKey.self,
-                                               value: g.frame(in: .named("memolist")).minY)
-                    })
-
                 ForEach(vm.cards) { c in
                     MemoCardView(title: c.title, preview: c.preview,
                                  meta: c.meta, classifying: c.classifying, pinned: c.pinned)
                         .contentShape(Rectangle())
                         .background(NavigationLink(value: c.memo) { EmptyView() }.opacity(0))
+                        // 스크롤 관찰기(카드 배경, 별도 행 안 만들어 간격 유발 방지) — 접힘 방향 감지
+                        .background(ScrollOffsetReader { y in Task { @MainActor in handleScroll(y) } })
                         .listRowInsets(EdgeInsets(top: Space.x2, leading: Space.x5,
                                                   bottom: Space.x2, trailing: Space.x5))
                         .listRowSeparator(.hidden)
@@ -225,20 +212,19 @@ struct MemoListView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .coordinateSpace(name: "memolist")
+            .contentMargins(.top, 0, for: .scrollContent)   // List 기본 상단 inset 제거(간격 축소)
             .refreshable { await vm.load() }
-            .onPreferenceChange(ScrollOffsetKey.self) { handleScroll($0) }
         }
     }
 
-    // 스크롤 방향으로 검색창 접힘/펼침. deadzone·최상단 가드로 흔들림 억제.
-    private func handleScroll(_ y: CGFloat) {
+    // 스크롤 방향으로 검색창 접힘/펼침. y=contentOffset.y(최상단 0, 내리면 증가).
+    @MainActor private func handleScroll(_ y: CGFloat) {
         let delta = y - lastOffset
-        if y > -12 {                                   // 최상단 근처 → 항상 표시
+        if y < 12 {                                    // 최상단 근처 → 항상 표시
             if searchCollapsed { withAnimation(.easeInOut(duration: 0.2)) { searchCollapsed = false } }
-        } else if delta < -8 {                         // 내림 → 숨김
+        } else if delta > 8 {                          // 내림 → 숨김
             if !searchCollapsed { withAnimation(.easeInOut(duration: 0.2)) { searchCollapsed = true } }
-        } else if delta > 8 {                          // 올림 → 표시
+        } else if delta < -8 {                         // 올림 → 표시
             if searchCollapsed { withAnimation(.easeInOut(duration: 0.2)) { searchCollapsed = false } }
         }
         lastOffset = y
