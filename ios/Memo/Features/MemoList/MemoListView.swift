@@ -10,9 +10,10 @@ struct MemoListView: View {
     @State private var pendingDeleteID: UUID?     // 스와이프 삭제 확인 대상
     @State private var searchCollapsed = false     // 스크롤 내림 시 검색창 접힘
     @State private var lastOffset: CGFloat = 0
+    @State private var path = NavigationPath()
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             content
                 .navigationDestination(for: Memo.self) { m in
                     MemoDetailView(vm: vm, memo: m)
@@ -177,10 +178,12 @@ struct MemoListView: View {
         } else {
             List {
                 ForEach(vm.cards) { c in
-                    MemoCardView(title: c.title, preview: c.preview,
-                                 meta: c.meta, classifying: c.classifying, pinned: c.pinned)
-                        .contentShape(Rectangle())
-                        .background(NavigationLink(value: c.memo) { EmptyView() }.opacity(0))
+                    // List에선 배경 NavigationLink가 탭 처리 안 됨 → Button+path로 이동(셰브론 없음, 탭 확실).
+                    Button { path.append(c.memo) } label: {
+                        MemoCardView(title: c.title, preview: c.preview,
+                                     meta: c.meta, classifying: c.classifying, pinned: c.pinned)
+                    }
+                    .buttonStyle(.plain)
                         // 스크롤 관찰기(카드 배경, 별도 행 안 만들어 간격 유발 방지) — 접힘 방향 감지
                         .background(ScrollOffsetReader { y in Task { @MainActor in handleScroll(y) } })
                         .listRowInsets(EdgeInsets(top: Space.x2, leading: Space.x5,
