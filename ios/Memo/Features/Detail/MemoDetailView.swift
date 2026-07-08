@@ -1,5 +1,4 @@
 import SwiftUI
-import MarkdownUI
 
 // 메모 상세 — 본문 + 카테고리 + 관련 메모(recall).
 struct MemoDetailView: View {
@@ -23,8 +22,7 @@ struct MemoDetailView: View {
     }
 
     private var displayTitle: String {
-        // 제목은 평문 취급 — 카드와 동일하게 마크다운 기호 스트립(본문만 풀 렌더).
-        (content.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? "").markdownStripped
+        content.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? ""
     }
     private var displayBody: String {
         let p = content.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: true)
@@ -41,9 +39,8 @@ struct MemoDetailView: View {
                 .buttonStyle(.plain)
                 Text(displayTitle).font(.appTitle).foregroundStyle(AppColor.textPrimary)
                 if !displayBody.isEmpty {
-                    // 본문은 마크다운 렌더(제목/리스트/굵게/코드 등). 전경색은 테마 상속.
-                    Markdown(displayBody)
-                        .markdownTextStyle { ForegroundColor(AppColor.textPrimary) }
+                    Text(displayBody)
+                        .font(.appBody).foregroundStyle(AppColor.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
