@@ -11,6 +11,9 @@ struct MemoListView: View {
     @State private var searchCollapsed = false     // 스크롤 내림 시 검색창 접힘
     @State private var lastOffset: CGFloat = 0
     @State private var path = NavigationPath()
+    @State private var drawerOpen = false           // 좌측 폴더 드로어
+    @State private var dragOffset: CGFloat = 0       // 드로어 스와이프 중 offset
+    private let drawerWidth: CGFloat = 300
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -23,24 +26,24 @@ struct MemoListView: View {
     }
 
     private var content: some View {
-        ZStack(alignment: .bottomTrailing) {
-            AppColor.bgCanvas.ignoresSafeArea()
+        ZStack(alignment: .leading) {
+            mainStack
 
-            VStack(spacing: 0) {
-                fixedHeader
-                listOrEmpty
+            // 드로어 열림 시 배경 딤(탭하면 닫힘)
+            if drawerOpen {
+                Color.black.opacity(0.35).ignoresSafeArea()
+                    .transition(.opacity)
+                    .onTapGesture { closeDrawer() }
             }
 
-            Button { showCompose = true } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(AppColor.onAccent)
-                    .frame(width: 56, height: 56)
-                    .background(AppColor.accent)
-                    .clipShape(Circle())
-            }
-            .padding(Space.x5)
+            FolderDrawerView(vm: vm, width: drawerWidth) { closeDrawer() }
+                .frame(width: drawerWidth)
+                .frame(maxHeight: .infinity)
+                .background(AppColor.bgSurface)
+                .offset(x: currentDrawerX)
+                .ignoresSafeArea(edges: .vertical)
         }
+        .gesture(edgeSwipe)
         .task {
             net.onReconnect = { Task { await vm.flush() } }
             net.start()
@@ -71,7 +74,59 @@ struct MemoListView: View {
         }
     }
 
-    // 스크롤 밖 고정 헤더: 제목 · 검색(접힘) · 카테고리 칩 · 오프라인 배너
+    // 메인(목록 + FAB). 드로어는 이 위에 오버레이.
+    private var mainStack: some View {
+        ZStack(alignment: .bottomTrailing) {
+            AppColor.bgCanvas.ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                fixedHeader
+                listOrEmpty
+            }
+
+            Button { showCompose = true } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(AppColor.onAccent)
+                    .frame(width: 56, height: 56)
+                    .background(AppColor.accent)
+                    .clipShape(Circle())
+            }
+            .padding(Space.x5)
+        }
+    }
+
+    // 드로어 현재 x 위치. 닫힘=-width, 열림=0, 스와이프 중=드래그 반영.
+    private var currentDrawerX: CGFloat {
+        let base = drawerOpen ? 0 : -drawerWidth
+        return max(-drawerWidth, min(0, base + dragOffset))
+    }
+
+    private func openDrawer()  { withAnimation(.easeOut(duration: 0.25)) { drawerOpen = true }; dragOffset = 0 }
+    private func closeDrawer() { withAnimation(.easeOut(duration: 0.25)) { drawerOpen = false }; dragOffset = 0 }
+
+    // 좌측 엣지 스와이프로 열기 / 드로어 열린 상태서 왼쪽으로 밀어 닫기.
+    private var edgeSwipe: some Gesture {
+        DragGesture(minimumDistance: 12)
+            .onChanged { g in
+                if drawerOpen {
+                    dragOffset = min(0, g.translation.width)          // 왼쪽으로만
+                } else if g.startLocation.x < 24, g.translation.width > 0 {
+                    dragOffset = min(drawerWidth, g.translation.width) // 엣지서 오른쪽으로
+                }
+            }
+            .onEnded { g in
+                if drawerOpen {
+                    if g.translation.width < -60 { closeDrawer() } else { withAnimation(.easeOut(duration: 0.2)) { dragOffset = 0 } }
+                } else if g.startLocation.x < 24, g.translation.width > 60 {
+                    openDrawer()
+                } else {
+                    withAnimation(.easeOut(duration: 0.2)) { dragOffset = 0 }
+                }
+            }
+    }
+
+    // 스크롤 밖 고정 헤더: 제목 · 검색(접힘) · 폴더 위치 · 오프라인 배너
     private var fixedHeader: some View {
         VStack(alignment: .leading, spacing: Space.x4) {
             HStack(alignment: .firstTextBaseline) {
@@ -97,7 +152,7 @@ struct MemoListView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
 
-            folderBar
+            folderTabButton
 
             if vm.offline {
                 HStack(spacing: Space.x2) {
@@ -145,61 +200,21 @@ struct MemoListView: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
-    // 폴더 브라우저: 브레드크럼(위치) + 하위 폴더 칩(드릴다운). 루트에선 미분류 진입 칩.
-    private var folderBar: some View {
-        VStack(alignment: .leading, spacing: Space.x2) {
-            if vm.currentFolderId != nil || vm.unclassifiedMode {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: Space.x1) {
-                        crumb(title: String(localized: "전체")) { vm.goToRoot() }
-                        if vm.unclassifiedMode {
-                            crumbChevron
-                            crumb(title: String(localized: "미분류"), isLast: true) {}
-                        } else {
-                            ForEach(vm.breadcrumb) { f in
-                                crumbChevron
-                                crumb(title: f.title, isLast: f.id == vm.currentFolderId) {
-                                    vm.enterFolder(f.id)
-                                }
-                            }
-                        }
-                    }
-                }
+    // 현재 폴더 위치 표시 + 탭하면 좌측 드로어 열림.
+    private var folderTabButton: some View {
+        Button { openDrawer() } label: {
+            HStack(spacing: Space.x2) {
+                Image(systemName: "sidebar.left").font(.system(size: 15, weight: .semibold))
+                Text(vm.currentTitle).font(.appSubhead).lineLimit(1)
+                Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold))
+                Spacer(minLength: 0)
             }
-            if !vm.unclassifiedMode && (!vm.currentSubfolders.isEmpty || vm.currentFolderId == nil) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: Space.x2) {
-                        ForEach(vm.currentSubfolders) { f in
-                            CategoryChip(label: folderChipLabel(f), selected: false)
-                                .onTapGesture { vm.enterFolder(f.id) }
-                        }
-                        if vm.currentFolderId == nil {
-                            CategoryChip(label: String(localized: "미분류"), selected: false)
-                                .onTapGesture { vm.enterUnclassified() }
-                        }
-                    }
-                }
-            }
+            .foregroundStyle(AppColor.textPrimary)
+            .padding(.horizontal, Space.x3).padding(.vertical, Space.x2)
+            .background(AppColor.fieldBg)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
-    }
-
-    private var crumbChevron: some View {
-        Image(systemName: "chevron.right")
-            .font(.appCaption).foregroundStyle(AppColor.textTertiary)
-    }
-
-    private func crumb(title: String, isLast: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title).font(.appSubhead)
-                .foregroundStyle(isLast ? AppColor.textPrimary : AppColor.accent)
-        }
-        .disabled(isLast)
-    }
-
-    // 하위 폴더 칩 라벨. 직속 메모 수 있으면 "제목 N".
-    private func folderChipLabel(_ f: Folder) -> String {
-        let n = vm.memoCount(f.id)
-        return n > 0 ? "\(f.title) \(n)" : f.title
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
@@ -281,5 +296,71 @@ struct MemoListView: View {
         }
         .frame(maxWidth: .infinity, alignment: .center)
         .padding(.top, 80)
+    }
+}
+
+// 좌측 폴더 드로어 — 전체 · 폴더 트리(위계) · 미분류. 선택 시 목록 필터 + 닫힘.
+struct FolderDrawerView: View {
+    let vm: MemoListViewModel
+    let width: CGFloat
+    let onClose: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("폴더").font(.appHeadline).foregroundStyle(AppColor.textPrimary)
+                Spacer()
+                Button { onClose() } label: {
+                    Image(systemName: "xmark").font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(AppColor.textTertiary)
+                }
+            }
+            .padding(.horizontal, Space.x4).padding(.top, Space.x10).padding(.bottom, Space.x3)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 2) {
+                    row(title: String(localized: "전체"), icon: "tray.full", depth: 0, count: nil,
+                        selected: vm.currentFolderId == nil && !vm.unclassifiedMode) {
+                        vm.goToRoot(); onClose()
+                    }
+                    ForEach(vm.orderedTree()) { node in
+                        row(title: node.folder.title, icon: "folder", depth: node.depth,
+                            count: vm.memoCount(node.folder.id),
+                            selected: vm.currentFolderId == node.folder.id && !vm.unclassifiedMode) {
+                            vm.enterFolder(node.folder.id); onClose()
+                        }
+                    }
+                    Divider().overlay(AppColor.borderDefault).padding(.vertical, Space.x2)
+                    row(title: String(localized: "미분류"), icon: "tray", depth: 0, count: nil,
+                        selected: vm.unclassifiedMode) {
+                        vm.enterUnclassified(); onClose()
+                    }
+                }
+                .padding(.horizontal, Space.x3).padding(.bottom, Space.x6)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func row(title: String, icon: String, depth: Int, count: Int?,
+                     selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: Space.x2) {
+                if depth > 0 { Spacer().frame(width: CGFloat(depth) * 16) }
+                Image(systemName: icon).font(.system(size: 14)).frame(width: 18)
+                    .foregroundStyle(selected ? AppColor.accent : AppColor.textSecondary)
+                Text(title).font(.appSubhead).lineLimit(1)
+                    .foregroundStyle(selected ? AppColor.accent : AppColor.textPrimary)
+                Spacer(minLength: 0)
+                if let count, count > 0 {
+                    Text("\(count)").font(.appCaption).foregroundStyle(AppColor.textTertiary)
+                }
+            }
+            .padding(.vertical, Space.x2).padding(.horizontal, Space.x2)
+            .background(selected ? AppColor.accent.opacity(0.12) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
