@@ -175,47 +175,59 @@ Deno.serve(async (req) => {
 
   const supa = createClient(SUPABASE_URL, SERVICE_ROLE);
 
-  try {
-    // 3) 사용자 폴더 트리 조회. AI는 이 안에서만 고른다(새 폴더 생성 없음).
-    const { data: folderData, error: folderErr } = await supa
-      .from("folders").select("id,parent_id,title,description").eq("user_id", userId);
-    if (folderErr) throw folderErr;
-    const folders = (folderData ?? []) as FolderRow[];
-    const folderIds = new Set(folders.map((f) => f.id));
+  // 사용자가 작성 시 폴더를 지정했으면(record.folder_id) 분류를 건너뛰고 그 폴더 유지.
+  const preFolderId = typeof rec.folder_id === "string" && rec.folder_id ? rec.folder_id : null;
 
-    // 3b) 폴더별 예시 메모(분류 힌트). 최신순으로 한도까지 끌어와 폴더당 상위 N개만 사용.
-    const samples = new Map<string, string[]>();
-    if (folders.length > 0) {
-      const { data: sampleRows, error: sampleErr } = await supa
-        .from("memos").select("folder_id,content")
-        .eq("user_id", userId)
-        .not("folder_id", "is", null)
-        .is("deleted_at", null)
-        .neq("id", memoId)
-        .order("created_at", { ascending: false })
-        .limit(SAMPLE_FETCH_LIMIT);
-      if (sampleErr) throw sampleErr;
-      for (const r of (sampleRows ?? []) as { folder_id: string; content: string }[]) {
-        const arr = samples.get(r.folder_id) ?? [];
-        if (arr.length < SAMPLES_PER_FOLDER) {
-          arr.push(String(r.content ?? "").replace(/\s+/g, " ").trim().slice(0, SAMPLE_CHARS));
-          samples.set(r.folder_id, arr);
+  try {
+    let folderId: string | null;
+    let vec: number[];
+
+    if (preFolderId) {
+      // 3a) 폴더 지정분: 분류 LLM 스킵, 임베딩만(검색/관련메모용).
+      vec = await retry(() => embed(content));
+      folderId = preFolderId;
+    } else {
+      // 3b) AI 분류: 사용자 폴더 트리 조회(AI는 이 안에서만 고른다, 새 폴더 생성 없음).
+      const { data: folderData, error: folderErr } = await supa
+        .from("folders").select("id,parent_id,title,description").eq("user_id", userId);
+      if (folderErr) throw folderErr;
+      const folders = (folderData ?? []) as FolderRow[];
+      const folderIds = new Set(folders.map((f) => f.id));
+
+      // 폴더별 예시 메모(분류 힌트). 최신순으로 한도까지 끌어와 폴더당 상위 N개만 사용.
+      const samples = new Map<string, string[]>();
+      if (folders.length > 0) {
+        const { data: sampleRows, error: sampleErr } = await supa
+          .from("memos").select("folder_id,content")
+          .eq("user_id", userId)
+          .not("folder_id", "is", null)
+          .is("deleted_at", null)
+          .neq("id", memoId)
+          .order("created_at", { ascending: false })
+          .limit(SAMPLE_FETCH_LIMIT);
+        if (sampleErr) throw sampleErr;
+        for (const r of (sampleRows ?? []) as { folder_id: string; content: string }[]) {
+          const arr = samples.get(r.folder_id) ?? [];
+          if (arr.length < SAMPLES_PER_FOLDER) {
+            arr.push(String(r.content ?? "").replace(/\s+/g, " ").trim().slice(0, SAMPLE_CHARS));
+            samples.set(r.folder_id, arr);
+          }
         }
       }
+
+      // 분류 + 임베딩. 빈 트리면 분류 LLM 스킵(무조건 미분류) → 비용 절약.
+      const [cls, v] = await Promise.all([
+        folders.length === 0
+          ? Promise.resolve<Classification>({ folder_id: null, confidence: 0, reason: "폴더 없음" })
+          : retry(() => classify(renderTree(folders, samples), content)),
+        retry(() => embed(content)),
+      ]);
+      vec = v;
+      // 환각 방어: 모델이 트리에 없는 folder_id를 반환하면 미분류(null)로 강등.
+      folderId = cls.folder_id && folderIds.has(cls.folder_id) ? cls.folder_id : null;
     }
 
-    // 4) 분류 + 5) 임베딩. 빈 트리면 분류 LLM 스킵(무조건 미분류) → 비용 절약.
-    const [cls, vec] = await Promise.all([
-      folders.length === 0
-        ? Promise.resolve<Classification>({ folder_id: null, confidence: 0, reason: "폴더 없음" })
-        : retry(() => classify(renderTree(folders, samples), content)),
-      retry(() => embed(content)),
-    ]);
-
-    // 6) 환각 방어: 모델이 트리에 없는 folder_id를 반환하면 미분류(null)로 강등.
-    const folderId = cls.folder_id && folderIds.has(cls.folder_id) ? cls.folder_id : null;
-
-    // 7) 메모 갱신 (vector는 pgvector 텍스트 리터럴 '[...]'로)
+    // 메모 갱신 (vector는 pgvector 텍스트 리터럴 '[...]'로)
     const { error: updErr } = await supa.from("memos").update({
       folder_id: folderId,
       embedding: `[${vec.join(",")}]`,

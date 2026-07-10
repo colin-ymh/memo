@@ -43,7 +43,7 @@ actor LocalStore {
 
 // 오프라인 쓰기 대기 작업(Tier B).
 enum PendingOp: Codable, Sendable {
-    case create(id: UUID, content: String, createdAt: Date)
+    case create(id: UUID, content: String, folderId: UUID?, createdAt: Date)
     case update(id: UUID, content: String)
     case delete(id: UUID)
     case setFolder(id: UUID, folderId: UUID?)

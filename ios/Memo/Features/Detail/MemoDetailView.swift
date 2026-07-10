@@ -91,7 +91,7 @@ struct MemoDetailView: View {
             )
         }
         .sheet(isPresented: $showEdit) {
-            ComposeView(initialContent: content, navTitle: "메모 편집") { newContent in
+            ComposeView(initialContent: content, navTitle: "메모 편집") { newContent, _ in
                 content = newContent
                 await vm.updateMemo(memoId: memo.id, content: newContent)
             }

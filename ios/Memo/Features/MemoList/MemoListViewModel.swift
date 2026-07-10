@@ -192,12 +192,14 @@ final class MemoListViewModel {
 
     // MARK: - 메모 작성/편집
 
-    func create(content: String) async {
+    // folderId 지정 시 그 폴더로 바로 저장(AI 분류 건너뜀). nil이면 AI 자동 분류.
+    func create(content: String, folderId: UUID? = nil) async {
         let id = UUID(); let now = Date()
-        memos.insert(Memo(id: id, content: content, folderId: nil, embeddingModel: nil,
+        // folder 지정분은 즉시 분류완료로 보이지 않게: embeddingModel nil 유지(임베딩은 서버가 채움).
+        memos.insert(Memo(id: id, content: content, folderId: folderId, embeddingModel: nil,
                           createdAt: now, updatedAt: now, deletedAt: nil), at: 0)
         rebuild()
-        enqueue(.create(id: id, content: content, createdAt: now))
+        enqueue(.create(id: id, content: content, folderId: folderId, createdAt: now))
         await persistCache(); await flush()
     }
 
@@ -324,7 +326,7 @@ final class MemoListViewModel {
 
     private func applyRemote(_ op: PendingOp) async throws {
         switch op {
-        case let .create(id, content, _):   try await repo.createMemo(id: id, content: content)
+        case let .create(id, content, folderId, _): try await repo.createMemo(id: id, content: content, folderId: folderId)
         case let .update(id, content):      try await repo.updateMemo(memoId: id, content: content)
         case let .delete(id):               try await repo.softDeleteMemo(id: id)
         case let .setFolder(id, folderId):  try await repo.setFolder(memoId: id, folderId: folderId)
@@ -335,9 +337,9 @@ final class MemoListViewModel {
     private func replayPending() {
         for op in pendingOps {
             switch op {
-            case let .create(id, content, createdAt):
+            case let .create(id, content, folderId, createdAt):
                 if !memos.contains(where: { $0.id == id }) {
-                    memos.insert(Memo(id: id, content: content, folderId: nil, embeddingModel: nil,
+                    memos.insert(Memo(id: id, content: content, folderId: folderId, embeddingModel: nil,
                                       createdAt: createdAt, updatedAt: createdAt, deletedAt: nil), at: 0)
                 }
             case let .update(id, content):

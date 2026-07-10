@@ -11,7 +11,7 @@ struct SemanticHit: Decodable, Sendable, Identifiable {
 protocol MemoRepository: Sendable {
     func fetchMemos() async throws -> [Memo]
     func fetchFolders() async throws -> [Folder]
-    func createMemo(id: UUID, content: String) async throws
+    func createMemo(id: UUID, content: String, folderId: UUID?) async throws
     func updateMemo(memoId: UUID, content: String) async throws
     func softDeleteMemo(id: UUID) async throws
     func relatedMemos(memoId: UUID) async throws -> [RelatedMemo]
@@ -80,17 +80,18 @@ struct SupabaseMemoRepository: MemoRepository {
     }
 
     // 클라이언트가 id를 생성해 넘긴다 → 오프라인 생성분이 온라인 flush돼도 같은 id(서버id=로컬id).
-    func createMemo(id: UUID, content: String) async throws {
+    func createMemo(id: UUID, content: String, folderId: UUID?) async throws {
         guard let userId = client.auth.currentUser?.id else {
             throw NSError(domain: "memo", code: 401,
                           userInfo: [NSLocalizedDescriptionKey: "로그인 필요"])
         }
         // RLS: user_id = auth.uid() 필수(스키마에 default 없음)라 명시 전달.
+        // folder_id 지정 시 process-memo가 분류를 건너뛰고 그 폴더 유지(임베딩만).
         // upsert(ignoreDuplicates): flush 재시도가 중복 insert돼도 PK 충돌 없이 멱등.
-        struct Insert: Encodable { let id: UUID; let user_id: UUID; let content: String }
+        struct Insert: Encodable { let id: UUID; let user_id: UUID; let content: String; let folder_id: UUID? }
         try await client
             .from("memos")
-            .upsert(Insert(id: id, user_id: userId, content: content),
+            .upsert(Insert(id: id, user_id: userId, content: content, folder_id: folderId),
                     onConflict: "id", ignoreDuplicates: true)
             .execute()
     }

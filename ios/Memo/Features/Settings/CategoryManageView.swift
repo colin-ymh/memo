@@ -33,7 +33,7 @@ struct FolderManageView: View {
                         rowView(row.folder, depth: row.depth)
                     }
                 } footer: {
-                    Text("행을 밀어 하위 추가·편집·이동·삭제할 수 있어요. 삭제는 비어 있는 폴더만 가능하고, 최대 3단계까지 만들 수 있어요.")
+                    Text("＋로 하위 폴더 추가, ⋯로 편집·이동·삭제. 삭제는 비어 있는 폴더만 가능하고, 최대 3단계까지 만들 수 있어요.")
                 }
             }
         }
@@ -71,6 +71,7 @@ struct FolderManageView: View {
     private func rowView(_ f: Folder, depth: Int) -> some View {
         HStack(spacing: Space.x2) {
             if depth > 0 { Spacer().frame(width: CGFloat(depth) * 16) }
+            Image(systemName: "folder").font(.system(size: 14)).foregroundStyle(AppColor.textSecondary)
             VStack(alignment: .leading, spacing: 2) {
                 Text(f.title).foregroundStyle(AppColor.textPrimary)
                 if let d = f.description, !d.isEmpty {
@@ -78,24 +79,26 @@ struct FolderManageView: View {
                 }
             }
             Spacer()
-            Text("메모 \(vm.memoCount(f.id))")
-                .font(.appCaption).foregroundStyle(AppColor.textSecondary)
-        }
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            if vm.canDelete(f.id) {
-                Button(role: .destructive) {
-                    Task { busy = true; _ = await vm.deleteFolder(id: f.id); busy = false }
-                } label: { Label("삭제", systemImage: "trash") }
-            }
-            Button { reparentTarget = f } label: { Label("이동", systemImage: "folder") }
-                .tint(AppColor.textSecondary)
-            Button { editor = .edit(f) } label: { Label("편집", systemImage: "pencil") }
-                .tint(AppColor.accent)
-        }
-        .swipeActions(edge: .leading, allowsFullSwipe: false) {
+            Text("\(vm.memoCount(f.id))")
+                .font(.appCaption).foregroundStyle(AppColor.textTertiary)
+            // 하위 추가(뎁스 여유 있을 때) — 눈에 보이는 버튼
             if vm.depth(of: f.id) < kMaxFolderDepth {
-                Button { editor = .create(parent: f.id) } label: { Label("하위 추가", systemImage: "plus") }
-                    .tint(AppColor.accent)
+                Button { editor = .create(parent: f.id) } label: {
+                    Image(systemName: "plus.circle").font(.system(size: 18)).foregroundStyle(AppColor.accent)
+                }
+                .buttonStyle(.plain)
+            }
+            // 편집/이동/삭제 메뉴 — 눈에 보이는 ⋯
+            Menu {
+                Button { editor = .edit(f) } label: { Label("편집", systemImage: "pencil") }
+                Button { reparentTarget = f } label: { Label("이동", systemImage: "folder") }
+                if vm.canDelete(f.id) {
+                    Button(role: .destructive) {
+                        Task { busy = true; _ = await vm.deleteFolder(id: f.id); busy = false }
+                    } label: { Label("삭제", systemImage: "trash") }
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle").font(.system(size: 18)).foregroundStyle(AppColor.textSecondary)
             }
         }
     }

@@ -51,14 +51,17 @@ struct MemoListView: View {
             await vm.startRealtime()
         }
         .sheet(isPresented: $showCompose) {
-            ComposeView { content in await vm.create(content: content) }
+            // 폴더 안에서 작성하면 그 폴더로 바로 저장(기본값). 전체/미분류에선 AI 자동.
+            ComposeView(folderTree: vm.orderedTree(), initialFolderId: vm.currentFolderId) { content, folderId in
+                await vm.create(content: content, folderId: folderId)
+            }
         }
         .sheet(isPresented: $showSettings) {
             SettingsView(auth: auth, vm: vm)
         }
         // 스와이프 편집 — ComposeView 프리필(상세 편집과 동일 패턴)
         .sheet(item: $editingMemo) { m in
-            ComposeView(initialContent: m.content, navTitle: "메모 편집") { newContent in
+            ComposeView(initialContent: m.content, navTitle: "메모 편집") { newContent, _ in
                 await vm.updateMemo(memoId: m.id, content: newContent)
             }
         }
