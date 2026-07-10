@@ -21,47 +21,75 @@ const ANTHROPIC_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;
 const COHERE_KEY = Deno.env.get("COHERE_API_KEY")!;
 const WEBHOOK_SECRET = Deno.env.get("WEBHOOK_SECRET")!;
 
-// 분류 규칙 = 안정적이라 캐싱 대상. 카테고리 목록은 바뀌므로 user 메시지에.
-const CLASSIFY_SYSTEM = `너는 개인 메모 앱의 카테고리 분류기다.
+// 분류 규칙 = 안정적이라 캐싱 대상. 폴더 트리는 바뀌므로 user 메시지에.
+const CLASSIFY_SYSTEM = `너는 개인 메모 앱의 폴더 분류기다.
 
-대원칙: **기존 카테고리 재사용을 강하게 선호하라.** 카테고리가 무한정 늘어나면
-사용자에게 쓸모없어진다. 새 카테고리는 정말로 새로운 주제일 때만 만든다.
+사용자는 자기만의 폴더 트리(최대 3뎁스)를 직접 설계했다. 각 폴더엔 제목(title)과
+설명(description)이 있고, 이미 들어있는 예시 메모가 붙어 있을 수 있다.
+
+너의 역할: 새 메모를 이 트리 안에서 **가장 알맞은 폴더 하나로 이동**시키는 것뿐이다.
 
 규칙:
-- 사용자의 기존 카테고리 목록을 먼저 본다. 각 항목엔 이미 쌓인 메모 수(count)가 붙어 있다.
-  **메모가 많이 쌓인(count 큰) 카테고리일수록 우선 재사용**을 검토한다.
-- 기존 카테고리는 메모가 그 주제에 합리적으로 속하면 재사용한다.
-  언어가 달라도 의미가 같으면 재사용한다(예: "개발"이 있으면 영어 개발 메모도 "개발", 새 "Development" 금지).
-  이름이 정확히 같지 않아도 의미가 겹치면 기존 것으로 묶는다(예: "여행"이 있으면 "여행계획"을 새로 만들지 말고 "여행" 재사용).
-- 새 카테고리는 기존 어디에도 합리적으로 속하지 않는 '분명히 다른' 주제일 때만 제안한다(is_new=true).
-  단, '약하게만' 걸치는 억지 분류는 여전히 피한다(예: 마케팅 메모를 "개발"에 넣지 마라).
-- 카테고리는 '구체적'으로. 너무 큰 범주("기타"·"일상"·"메모")나 지나치게 포괄적인 이름은 피한다.
-- 새 카테고리 이름은 메모와 같은 언어로, 짧고 자연스러운 명사로(대략 2~5자).
-- confidence는 '기존 카테고리 재사용'에 대한 확신도다(0~1). **0.4 미만일 때만 기존에 넣지 말고
-  is_new=true로 새 카테고리를 제안하라.** 0.4~1.0이면 가장 적합한 기존 카테고리를 재사용한다.
-  새 카테고리를 만들 때 confidence는 그 제안의 확신도로 준다.`;
+- **폴더를 새로 만들지 마라.** 아래에 주어진 folder_id 중 하나만 고를 수 있다.
+- 판단 힌트: 폴더의 title + description + 그 폴더에 이미 든 예시 메모들의 내용.
+- 메모는 아무 뎁스에나 놓일 수 있다. 상위 폴더가 더 알맞으면 상위 폴더를 골라도 된다.
+- 어느 폴더에도 합리적으로 맞지 않으면 **folder_id를 생략하라**(미분류). '약하게만'
+  걸치는 억지 분류는 하지 마라(예: 마케팅 메모를 "개발"에 넣지 마라).
+- confidence는 '고른 폴더가 맞다'는 확신도다(0~1). **0.4 미만이면 억지로 넣지 말고
+  folder_id를 생략하라.** 0.4 이상일 때만 그 폴더를 고른다.`;
 
+// folder_id는 optional string(미분류면 생략). union type(["string","null"])는 API 호환성
+// 이슈 소지가 있어, "없으면 생략"으로 처리 → 아래에서 absent/미존재 모두 null 취급.
 const CLASSIFY_TOOL = {
   name: "classify",
-  description: "메모를 카테고리로 분류한다.",
+  description: "메모를 폴더 트리 안의 폴더로 분류한다. 맞는 폴더가 없으면 folder_id를 생략한다(미분류).",
   input_schema: {
     type: "object",
     properties: {
-      category: { type: "string", description: "선택/제안한 카테고리 이름" },
-      is_new: { type: "boolean", description: "새 카테고리면 true" },
-      confidence: { type: "number", description: "확신 0~1" },
+      folder_id: {
+        type: "string",
+        description: "고른 폴더의 id(트리에 있는 것만). 맞는 폴더가 없으면 이 필드를 생략(미분류).",
+      },
+      confidence: { type: "number", description: "고른 폴더가 맞다는 확신 0~1" },
       reason: { type: "string" },
     },
-    required: ["category", "is_new", "confidence", "reason"],
+    required: ["confidence", "reason"],
   },
 };
 
 type Classification = {
-  category: string;
-  is_new: boolean;
+  folder_id?: string | null;
   confidence: number;
   reason: string;
 };
+
+type FolderRow = { id: string; parent_id: string | null; title: string; description: string | null };
+
+const SAMPLES_PER_FOLDER = 5;   // 폴더당 예시 메모 수(토큰 관리)
+const SAMPLE_CHARS = 120;       // 예시 메모 앞부분만
+const SAMPLE_FETCH_LIMIT = 300; // 샘플 원본으로 끌어올 최대 메모 행
+
+// 폴더 트리를 들여쓰기 텍스트로 직렬화. 각 폴더 = id + title + description + 예시메모.
+function renderTree(folders: FolderRow[], samples: Map<string, string[]>): string {
+  const byParent = new Map<string | null, FolderRow[]>();
+  for (const f of folders) {
+    const key = f.parent_id ?? null;
+    (byParent.get(key) ?? byParent.set(key, []).get(key)!).push(f);
+  }
+  const lines: string[] = [];
+  const walk = (parent: string | null, depth: number) => {
+    for (const f of byParent.get(parent) ?? []) {
+      const pad = "  ".repeat(depth);
+      lines.push(`${pad}- [${f.id}] ${f.title}${f.description ? ` — ${f.description}` : ""}`);
+      for (const s of samples.get(f.id) ?? []) {
+        lines.push(`${pad}    · 예시메모: ${s}`);
+      }
+      walk(f.id, depth + 1);
+    }
+  };
+  walk(null, 0);
+  return lines.join("\n");
+}
 
 async function retry<T>(fn: () => Promise<T>, tries = 3, baseMs = 400): Promise<T> {
   let lastErr: unknown;
@@ -76,9 +104,7 @@ async function retry<T>(fn: () => Promise<T>, tries = 3, baseMs = 400): Promise<
   throw lastErr;
 }
 
-type ExistingCat = { name: string; count: number };
-
-async function classify(existing: ExistingCat[], content: string): Promise<Classification> {
+async function classify(treeText: string, content: string): Promise<Classification> {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -92,7 +118,7 @@ async function classify(existing: ExistingCat[], content: string): Promise<Class
       system: [{ type: "text", text: CLASSIFY_SYSTEM, cache_control: { type: "ephemeral" } }],
       tools: [CLASSIFY_TOOL],
       tool_choice: { type: "tool", name: "classify" }, // 구조화 출력 강제
-      messages: [{ role: "user", content: `기존 카테고리: ${JSON.stringify(existing)}\n\n메모:\n${content}` }],
+      messages: [{ role: "user", content: `폴더 트리:\n${treeText}\n\n분류할 메모:\n${content}` }],
     }),
   });
   if (!res.ok) throw new Error(`anthropic ${res.status}: ${await res.text()}`);
@@ -150,34 +176,48 @@ Deno.serve(async (req) => {
   const supa = createClient(SUPABASE_URL, SERVICE_ROLE);
 
   try {
-    // 3) 기존 카테고리 + 카테고리별 메모 수(재사용 편향 힌트).
-    //    DB에서 GROUP BY 집계(category_usage RPC) → 전체 메모 행을 끌어오지 않음.
-    const { data: usage, error: catErr } = await supa
-      .rpc("category_usage", { p_user_id: userId });
-    if (catErr) throw catErr;
-    const existing: ExistingCat[] = ((usage ?? []) as { name: string; n: number }[])
-      .map((u) => ({ name: u.name, count: Number(u.n) }))
-      .sort((a, b) => b.count - a.count);
+    // 3) 사용자 폴더 트리 조회. AI는 이 안에서만 고른다(새 폴더 생성 없음).
+    const { data: folderData, error: folderErr } = await supa
+      .from("folders").select("id,parent_id,title,description").eq("user_id", userId);
+    if (folderErr) throw folderErr;
+    const folders = (folderData ?? []) as FolderRow[];
+    const folderIds = new Set(folders.map((f) => f.id));
 
-    // 4) 분류 + 5) 임베딩 (각각 재시도)
+    // 3b) 폴더별 예시 메모(분류 힌트). 최신순으로 한도까지 끌어와 폴더당 상위 N개만 사용.
+    const samples = new Map<string, string[]>();
+    if (folders.length > 0) {
+      const { data: sampleRows, error: sampleErr } = await supa
+        .from("memos").select("folder_id,content")
+        .eq("user_id", userId)
+        .not("folder_id", "is", null)
+        .is("deleted_at", null)
+        .neq("id", memoId)
+        .order("created_at", { ascending: false })
+        .limit(SAMPLE_FETCH_LIMIT);
+      if (sampleErr) throw sampleErr;
+      for (const r of (sampleRows ?? []) as { folder_id: string; content: string }[]) {
+        const arr = samples.get(r.folder_id) ?? [];
+        if (arr.length < SAMPLES_PER_FOLDER) {
+          arr.push(String(r.content ?? "").replace(/\s+/g, " ").trim().slice(0, SAMPLE_CHARS));
+          samples.set(r.folder_id, arr);
+        }
+      }
+    }
+
+    // 4) 분류 + 5) 임베딩. 빈 트리면 분류 LLM 스킵(무조건 미분류) → 비용 절약.
     const [cls, vec] = await Promise.all([
-      retry(() => classify(existing, content)),
+      folders.length === 0
+        ? Promise.resolve<Classification>({ folder_id: null, confidence: 0, reason: "폴더 없음" })
+        : retry(() => classify(renderTree(folders, samples), content)),
       retry(() => embed(content)),
     ]);
 
-    // 6) 카테고리 id 확정 — race-safe upsert(중복 무시) 후 조회.
-    //    ignoreDuplicates=true라 동시 신규제안 충돌해도 throw 없고 created_by_ai 클로버 안 됨.
-    await supa.from("categories").upsert(
-      { user_id: userId, name: cls.category, created_by_ai: cls.is_new },
-      { onConflict: "user_id,name", ignoreDuplicates: true },
-    );
-    const { data: cat, error: findErr } = await supa
-      .from("categories").select("id").eq("user_id", userId).eq("name", cls.category).single();
-    if (findErr) throw findErr;
+    // 6) 환각 방어: 모델이 트리에 없는 folder_id를 반환하면 미분류(null)로 강등.
+    const folderId = cls.folder_id && folderIds.has(cls.folder_id) ? cls.folder_id : null;
 
     // 7) 메모 갱신 (vector는 pgvector 텍스트 리터럴 '[...]'로)
     const { error: updErr } = await supa.from("memos").update({
-      category_id: cat.id,
+      folder_id: folderId,
       embedding: `[${vec.join(",")}]`,
       embedding_model: MODEL_EMBED,
       embedding_dim: EMBED_DIM,
@@ -185,7 +225,7 @@ Deno.serve(async (req) => {
     }).eq("id", memoId);
     if (updErr) throw updErr;
 
-    return Response.json({ ok: true, memo_id: memoId, category: cls.category, is_new: cls.is_new });
+    return Response.json({ ok: true, memo_id: memoId, folder_id: folderId });
   } catch (e) {
     // 실패 시 memo는 embedding=null로 남음 → pg_cron 보정 스윕이 재처리.
     console.error(`process-memo 실패 memo=${memoId}:`, e);

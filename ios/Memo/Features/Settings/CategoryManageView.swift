@@ -1,73 +1,163 @@
 import SwiftUI
 
-// 카테고리 관리 — 사용순 목록 + 메모 수. 스와이프로 이름변경/병합.
-// 병합·이름변경은 온라인 즉시 실행 후 vm.load()로 반영(오프라인 큐 대상 아님).
-struct CategoryManageView: View {
+// 폴더 편집기 시트의 모드(생성/편집). 파일 스코프라 두 뷰가 공유.
+enum FolderEditorMode: Identifiable {
+    case create(parent: UUID?)
+    case edit(Folder)
+    var id: String {
+        switch self {
+        case .create(let p): return "create-\(p?.uuidString ?? "root")"
+        case .edit(let f):   return "edit-\(f.id.uuidString)"
+        }
+    }
+}
+
+// 폴더 관리 — 트리 편집. 생성/이름·설명 수정/이동(reparent)/삭제(빈 폴더만).
+// 모든 변경은 온라인 즉시 실행 후 vm.load() 반영(오프라인 큐 대상 아님).
+struct FolderManageView: View {
     @Bindable var vm: MemoListViewModel
 
-    @State private var renameTarget: Category?
-    @State private var renameText = ""
-    @State private var mergeSource: Category?
+    @State private var editor: FolderEditorMode?
+    @State private var reparentTarget: Folder?
     @State private var busy = false
 
     var body: some View {
         List {
-            if vm.allCategories.isEmpty {
-                Text("아직 카테고리가 없어요.")
+            let tree = vm.orderedTree()
+            if tree.isEmpty {
+                Text("아직 폴더가 없어요. 오른쪽 위 ＋로 첫 폴더를 만들어보세요.")
                     .foregroundStyle(AppColor.textSecondary)
             } else {
                 Section {
-                    ForEach(vm.allCategories) { c in
-                        HStack {
-                            Text(c.name).foregroundStyle(AppColor.textPrimary)
-                            Spacer()
-                            Text("메모 \(vm.categoryCounts[c.id] ?? 0)")
-                                .font(.appCaption).foregroundStyle(AppColor.textSecondary)
-                        }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button {
-                                mergeSource = c
-                            } label: { Label("병합", systemImage: "arrow.triangle.merge") }
-                                .tint(AppColor.accent)
-                            Button {
-                                renameText = c.name; renameTarget = c
-                            } label: { Label("이름변경", systemImage: "pencil") }
-                        }
+                    ForEach(tree, id: \.folder.id) { row in
+                        rowView(row.folder, depth: row.depth)
                     }
                 } footer: {
-                    Text("행을 왼쪽으로 밀어 이름을 바꾸거나 다른 카테고리로 병합할 수 있어요.")
+                    Text("행을 밀어 하위 추가·편집·이동·삭제할 수 있어요. 삭제는 비어 있는 폴더만 가능하고, 최대 3단계까지 만들 수 있어요.")
                 }
             }
         }
         .disabled(busy)
-        .navigationTitle("카테고리 관리")
+        .navigationTitle("폴더 관리")
         .navigationBarTitleDisplayMode(.inline)
-        // 이름 변경
-        .alert("이름 변경", isPresented: Binding(get: { renameTarget != nil },
-                                             set: { if !$0 { renameTarget = nil } }),
-               presenting: renameTarget) { cat in
-            TextField("이름", text: $renameText)
-            Button("저장") {
-                Task { busy = true; _ = await vm.renameCategory(cat.id, to: renameText); busy = false }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { editor = .create(parent: nil) } label: { Image(systemName: "plus") }
             }
-            Button("취소", role: .cancel) {}
-        } message: { _ in
-            Text("같은 이름이 이미 있으면 실패해요. 그럴 땐 병합을 쓰세요.")
         }
-        // 병합 대상 선택
-        .confirmationDialog("어느 카테고리로 병합할까요?",
-                            isPresented: Binding(get: { mergeSource != nil },
-                                                 set: { if !$0 { mergeSource = nil } }),
+        .sheet(item: $editor) { mode in FolderEditorView(mode: mode, vm: vm) }
+        // 이동 대상 선택
+        .confirmationDialog("어디로 옮길까요?",
+                            isPresented: Binding(get: { reparentTarget != nil },
+                                                 set: { if !$0 { reparentTarget = nil } }),
                             titleVisibility: .visible,
-                            presenting: mergeSource) { src in
-            ForEach(vm.allCategories.filter { $0.id != src.id }) { dst in
-                Button("\(dst.name)(으)로 병합") {
-                    Task { busy = true; _ = await vm.mergeCategory(src.id, into: dst.id); busy = false }
+                            presenting: reparentTarget) { f in
+            if f.parentId != nil {
+                Button("최상위로 이동") {
+                    Task { busy = true; _ = await vm.reparentFolder(id: f.id, to: nil); busy = false }
+                }
+            }
+            ForEach(validParents(for: f)) { p in
+                Button("\(vm.folderPath(p.id) ?? p.title) 아래로") {
+                    Task { busy = true; _ = await vm.reparentFolder(id: f.id, to: p.id); busy = false }
                 }
             }
             Button("취소", role: .cancel) {}
-        } message: { src in
-            Text("\"\(src.name)\"의 메모가 대상으로 옮겨지고 이 카테고리는 삭제됩니다.")
+        } message: { _ in
+            Text("깊이가 3단계를 넘거나 순환이 되는 이동은 자동으로 막혀요.")
         }
+    }
+
+    private func rowView(_ f: Folder, depth: Int) -> some View {
+        HStack(spacing: Space.x2) {
+            if depth > 0 { Spacer().frame(width: CGFloat(depth) * 16) }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(f.title).foregroundStyle(AppColor.textPrimary)
+                if let d = f.description, !d.isEmpty {
+                    Text(d).font(.appCaption).foregroundStyle(AppColor.textTertiary).lineLimit(1)
+                }
+            }
+            Spacer()
+            Text("메모 \(vm.memoCount(f.id))")
+                .font(.appCaption).foregroundStyle(AppColor.textSecondary)
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            if vm.canDelete(f.id) {
+                Button(role: .destructive) {
+                    Task { busy = true; _ = await vm.deleteFolder(id: f.id); busy = false }
+                } label: { Label("삭제", systemImage: "trash") }
+            }
+            Button { reparentTarget = f } label: { Label("이동", systemImage: "folder") }
+                .tint(AppColor.textSecondary)
+            Button { editor = .edit(f) } label: { Label("편집", systemImage: "pencil") }
+                .tint(AppColor.accent)
+        }
+        .swipeActions(edge: .leading, allowsFullSwipe: false) {
+            if vm.depth(of: f.id) < kMaxFolderDepth {
+                Button { editor = .create(parent: f.id) } label: { Label("하위 추가", systemImage: "plus") }
+                    .tint(AppColor.accent)
+            }
+        }
+    }
+
+    // 이동 후보: 자기 자신·후손 제외, 현재 부모 제외, 부모가 되면 3단계 이내여야(부모 깊이<3).
+    private func validParents(for f: Folder) -> [Folder] {
+        let desc = vm.descendantIds(of: f.id)
+        return vm.allFolders
+            .filter { $0.id != f.id && $0.id != f.parentId
+                && !desc.contains($0.id) && vm.depth(of: $0.id) < kMaxFolderDepth }
+            .sorted { $0.title < $1.title }
+    }
+}
+
+// 폴더 생성/편집 시트.
+struct FolderEditorView: View {
+    let mode: FolderEditorMode
+    let vm: MemoListViewModel
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var title = ""
+    @State private var desc = ""
+    @State private var busy = false
+
+    private var isEdit: Bool { if case .edit = mode { return true }; return false }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("제목") { TextField("폴더 이름", text: $title) }
+                Section("설명 (AI 분류 힌트)") {
+                    TextField("이 폴더엔 어떤 메모가 들어가나요?", text: $desc, axis: .vertical)
+                        .lineLimit(2...4)
+                }
+                if case .create(let parent) = mode, let parent, let path = vm.folderPath(parent) {
+                    Section { LabeledContent("상위 폴더", value: path) }
+                }
+            }
+            .navigationTitle(isEdit ? "폴더 편집" : "새 폴더")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("취소") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("저장") { Task { await save() } }
+                        .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty || busy)
+                }
+            }
+            .onAppear {
+                if case .edit(let f) = mode { title = f.title; desc = f.description ?? "" }
+            }
+        }
+    }
+
+    private func save() async {
+        busy = true; defer { busy = false }
+        let ok: Bool
+        switch mode {
+        case .create(let parent):
+            ok = (await vm.createFolder(title: title, description: desc, parentId: parent)) != nil
+        case .edit(let f):
+            ok = await vm.updateFolder(id: f.id, title: title, description: desc)
+        }
+        if ok { dismiss() }
     }
 }

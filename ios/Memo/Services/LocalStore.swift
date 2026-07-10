@@ -4,7 +4,7 @@ import Foundation
 // (App Group 미프로비저닝 시 Documents로 폴백 → 시뮬/개발서도 동작)
 struct LocalSnapshot: Codable, Sendable {
     var memos: [Memo] = []
-    var categories: [Category] = []
+    var folders: [Folder] = []
     var savedAt: Date = .init()
 }
 
@@ -46,7 +46,7 @@ enum PendingOp: Codable, Sendable {
     case create(id: UUID, content: String, createdAt: Date)
     case update(id: UUID, content: String)
     case delete(id: UUID)
-    case setCategory(id: UUID, categoryId: UUID?)
+    case setFolder(id: UUID, folderId: UUID?)
     case setPinned(id: UUID, pinned: Bool)
 }
 

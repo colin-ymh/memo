@@ -69,7 +69,7 @@ Deno.serve(async (req) => {
       match_count: count,
     });
     if (error) throw error;
-    const all = (data ?? []) as { id: string; content: string; category_id: string | null; similarity: number }[];
+    const all = (data ?? []) as { id: string; content: string; folder_id: string | null; similarity: number }[];
     const results = all.filter((r) => r.similarity >= SIMILARITY_FLOOR);
     return Response.json({ results }, { headers: cors });
   } catch (e) {

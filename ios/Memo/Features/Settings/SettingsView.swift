@@ -45,9 +45,9 @@ struct SettingsView: View {
 
                 Section("정리") {
                     NavigationLink {
-                        CategoryManageView(vm: vm)
+                        FolderManageView(vm: vm)
                     } label: {
-                        LabeledContent("카테고리 관리", value: "\(vm.allCategories.count)")
+                        LabeledContent("폴더 관리", value: "\(vm.allFolders.count)")
                     }
                 }
 

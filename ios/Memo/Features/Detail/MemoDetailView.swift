@@ -1,6 +1,6 @@
 import SwiftUI
 
-// 메모 상세 — 본문 + 카테고리 + 관련 메모(recall).
+// 메모 상세 — 본문 + 폴더 + 관련 메모(recall).
 struct MemoDetailView: View {
     let vm: MemoListViewModel
     let memo: Memo
@@ -8,7 +8,7 @@ struct MemoDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var related: [RelatedMemo] = []
     @State private var loadingRelated = true
-    @State private var categoryId: UUID?
+    @State private var folderId: UUID?
     @State private var content: String
     @State private var showPicker = false
     @State private var showEdit = false
@@ -17,7 +17,7 @@ struct MemoDetailView: View {
     init(vm: MemoListViewModel, memo: Memo) {
         self.vm = vm
         self.memo = memo
-        _categoryId = State(initialValue: memo.categoryId)
+        _folderId = State(initialValue: memo.folderId)
         _content = State(initialValue: memo.content)
     }
 
@@ -33,8 +33,8 @@ struct MemoDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.x4) {
                 Button { showPicker = true } label: {
-                    CategoryChip(label: vm.categoryName(categoryId) ?? "＋ 카테고리",
-                                 selected: categoryId != nil)
+                    CategoryChip(label: vm.folderPath(folderId) ?? String(localized: "＋ 폴더"),
+                                 selected: folderId != nil)
                 }
                 .buttonStyle(.plain)
                 Text(displayTitle).font(.appTitle).foregroundStyle(AppColor.textPrimary)
@@ -81,18 +81,12 @@ struct MemoDetailView: View {
             loadingRelated = false
         }
         .sheet(isPresented: $showPicker) {
-            CategoryPickerView(
-                categories: vm.allCategories,
-                current: categoryId,
-                onSelect: { cid in
-                    categoryId = cid
-                    Task { await vm.changeCategory(memoId: memo.id, to: cid) }
-                },
-                onCreate: { name in
-                    if let c = await vm.addCategory(name) {
-                        categoryId = c.id
-                        await vm.changeCategory(memoId: memo.id, to: c.id)
-                    }
+            FolderPickerView(
+                tree: vm.orderedTree(),
+                current: folderId,
+                onSelect: { fid in
+                    folderId = fid
+                    Task { await vm.changeFolder(memoId: memo.id, to: fid) }
                 }
             )
         }
@@ -135,8 +129,8 @@ struct MemoDetailView: View {
             if !rel.snippet.isEmpty {
                 Text(rel.snippet).font(.appCaption).foregroundStyle(AppColor.textSecondary).lineLimit(1)
             }
-            let cat = vm.categoryName(rel.categoryId)
-            Text(verbatim: "\(cat.map { "\($0) · " } ?? "")\(String(localized: "유사도")) \(String(format: "%.2f", rel.similarity))")
+            let folder = vm.folderTitle(rel.folderId)
+            Text(verbatim: "\(folder.map { "\($0) · " } ?? "")\(String(localized: "유사도")) \(String(format: "%.2f", rel.similarity))")
                 .font(.appFootnote).foregroundStyle(AppColor.textTertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -1,10 +1,10 @@
 import Foundation
 
-// DB 스키마(public.memos / public.categories)와 대응. Sendable로 동시성 안전.
+// DB 스키마(public.memos / public.folders)와 대응. Sendable로 동시성 안전.
 struct Memo: Identifiable, Codable, Sendable, Hashable {
     let id: UUID
     var content: String
-    var categoryId: UUID?
+    var folderId: UUID?           // nil이면 미분류
     var embeddingModel: String?   // nil이면 아직 분류/임베딩 전(= 분류 중)
     var createdAt: Date
     var updatedAt: Date
@@ -28,13 +28,13 @@ struct Memo: Identifiable, Codable, Sendable, Hashable {
 // decodeIfPresent — 이전에 저장된 스냅샷엔 키가 없어 keyNotFound 나므로.
 extension Memo {
     enum CodingKeys: String, CodingKey {
-        case id, content, categoryId, embeddingModel, createdAt, updatedAt, deletedAt, isPinned
+        case id, content, folderId, embeddingModel, createdAt, updatedAt, deletedAt, isPinned
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
         content = try c.decode(String.self, forKey: .content)
-        categoryId = try c.decodeIfPresent(UUID.self, forKey: .categoryId)
+        folderId = try c.decodeIfPresent(UUID.self, forKey: .folderId)
         embeddingModel = try c.decodeIfPresent(String.self, forKey: .embeddingModel)
         createdAt = try c.decode(Date.self, forKey: .createdAt)
         updatedAt = try c.decode(Date.self, forKey: .updatedAt)
@@ -47,7 +47,7 @@ extension Memo {
 struct RelatedMemo: Identifiable, Sendable, Hashable {
     let id: UUID
     let content: String
-    let categoryId: UUID?
+    let folderId: UUID?
     let similarity: Double
 
     var title: String {
@@ -59,8 +59,10 @@ struct RelatedMemo: Identifiable, Sendable, Hashable {
     }
 }
 
-struct Category: Identifiable, Codable, Sendable, Hashable {
+// public.folders와 대응. 자기참조 트리(최대 3뎁스). parentId nil = 최상위.
+struct Folder: Identifiable, Codable, Sendable, Hashable {
     let id: UUID
-    var name: String
-    var createdByAi: Bool
+    var parentId: UUID?
+    var title: String
+    var description: String?
 }

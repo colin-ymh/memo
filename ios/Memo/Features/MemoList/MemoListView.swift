@@ -81,7 +81,6 @@ struct MemoListView: View {
                     Picker("정렬", selection: $vm.sortOrder) {
                         ForEach(MemoSort.allCases) { s in Text(s.label).tag(s) }
                     }
-                    Toggle("미분류만", isOn: $vm.uncategorizedOnly)
                 } label: {
                     Image(systemName: "line.3.horizontal.decrease.circle")
                         .font(.system(size: 20)).foregroundStyle(AppColor.textSecondary)
@@ -98,7 +97,7 @@ struct MemoListView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
 
-            chipsBar
+            folderBar
 
             if vm.offline {
                 HStack(spacing: Space.x2) {
@@ -146,28 +145,61 @@ struct MemoListView: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
-    private var chipsBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: Space.x2) {
-                let catChips = Array(vm.chips.dropFirst())   // 카테고리(사용순)
-                let limit = 8
-                let showAll = vm.chipsExpanded || catChips.count <= limit
-                let visible = showAll ? catChips : Array(catChips.prefix(limit))
-
-                CategoryChip(label: String(localized: "전체"), selected: vm.selectedFilter == "전체")
-                    .onTapGesture { vm.selectFilter("전체") }
-                ForEach(visible, id: \.self) { f in
-                    CategoryChip(label: f, selected: f == vm.selectedFilter)
-                        .onTapGesture { vm.selectFilter(f) }
+    // 폴더 브라우저: 브레드크럼(위치) + 하위 폴더 칩(드릴다운). 루트에선 미분류 진입 칩.
+    private var folderBar: some View {
+        VStack(alignment: .leading, spacing: Space.x2) {
+            if vm.currentFolderId != nil || vm.unclassifiedMode {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: Space.x1) {
+                        crumb(title: String(localized: "전체")) { vm.goToRoot() }
+                        if vm.unclassifiedMode {
+                            crumbChevron
+                            crumb(title: String(localized: "미분류"), isLast: true) {}
+                        } else {
+                            ForEach(vm.breadcrumb) { f in
+                                crumbChevron
+                                crumb(title: f.title, isLast: f.id == vm.currentFolderId) {
+                                    vm.enterFolder(f.id)
+                                }
+                            }
+                        }
+                    }
                 }
-                if catChips.count > limit {
-                    CategoryChip(label: showAll ? String(localized: "접기")
-                                                 : String(localized: "더보기 \(catChips.count - limit)"),
-                                 selected: false)
-                        .onTapGesture { vm.chipsExpanded.toggle() }
+            }
+            if !vm.unclassifiedMode && (!vm.currentSubfolders.isEmpty || vm.currentFolderId == nil) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: Space.x2) {
+                        ForEach(vm.currentSubfolders) { f in
+                            CategoryChip(label: folderChipLabel(f), selected: false)
+                                .onTapGesture { vm.enterFolder(f.id) }
+                        }
+                        if vm.currentFolderId == nil {
+                            CategoryChip(label: String(localized: "미분류"), selected: false)
+                                .onTapGesture { vm.enterUnclassified() }
+                        }
+                    }
                 }
             }
         }
+    }
+
+    private var crumbChevron: some View {
+        Image(systemName: "chevron.right")
+            .font(.appCaption).foregroundStyle(AppColor.textTertiary)
+    }
+
+    private func crumb(title: String, isLast: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title).font(.appSubhead)
+                .foregroundStyle(isLast ? AppColor.textPrimary : AppColor.accent)
+        }
+        .disabled(isLast)
+    }
+
+    // 하위 폴더 칩 라벨. 직속 메모 수 있으면 "제목 N".
+    private func folderChipLabel(_ f: Folder) -> String {
+        let n = vm.memoCount(f.id)
+        return n > 0 ? "\(f.title) \(n)" : f.title
     }
 
     @ViewBuilder

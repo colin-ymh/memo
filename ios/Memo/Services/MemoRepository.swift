@@ -10,34 +10,37 @@ struct SemanticHit: Decodable, Sendable, Identifiable {
 // 데이터 접근 추상화(advisor: 프로토콜 뒤에 둬서 나중에 로컬캐시/동기화로 교체 쉽게).
 protocol MemoRepository: Sendable {
     func fetchMemos() async throws -> [Memo]
-    func fetchCategories() async throws -> [Category]
+    func fetchFolders() async throws -> [Folder]
     func createMemo(id: UUID, content: String) async throws
     func updateMemo(memoId: UUID, content: String) async throws
     func softDeleteMemo(id: UUID) async throws
     func relatedMemos(memoId: UUID) async throws -> [RelatedMemo]
-    func setCategory(memoId: UUID, categoryId: UUID?) async throws
+    func setFolder(memoId: UUID, folderId: UUID?) async throws
     func setPinned(memoId: UUID, pinned: Bool) async throws
     func searchSemantic(query: String, count: Int) async throws -> [SemanticHit]
-    func createCategory(name: String) async throws -> Category
-    func renameCategory(id: UUID, name: String) async throws
-    func mergeCategory(source: UUID, into target: UUID) async throws
+    // 폴더 트리 CRUD. 깊이(≤3)·순환은 서버 트리거가 최종 방어(앱도 사전 차단).
+    func createFolder(title: String, description: String?, parentId: UUID?) async throws -> Folder
+    func updateFolder(id: UUID, title: String, description: String?) async throws
+    func reparentFolder(id: UUID, parentId: UUID?) async throws
+    func deleteFolder(id: UUID) async throws   // 빈 폴더만(호출부에서 사전 확인)
 }
 
 // PostgREST row(snake_case). 날짜는 문자열로 받아 안전하게 파싱.
 private struct MemoRow: Decodable {
     let id: UUID
     let content: String
-    let category_id: UUID?
+    let folder_id: UUID?
     let embedding_model: String?
     let created_at: String
     let updated_at: String
     let deleted_at: String?
     let is_pinned: Bool?
 }
-private struct CategoryRow: Decodable {
+private struct FolderRow: Decodable {
     let id: UUID
-    let name: String
-    let created_by_ai: Bool
+    let parent_id: UUID?
+    let title: String
+    let description: String?
 }
 
 // ISO8601DateFormatter는 스레드세이프(파싱/포맷). Swift6에 Sendable로 인식 안 돼 표시.
@@ -53,7 +56,7 @@ private func parseDate(_ s: String?) -> Date {
 
 struct SupabaseMemoRepository: MemoRepository {
     private var client: SupabaseClient { SupabaseManager.client }
-    private let selectCols = "id,content,category_id,embedding_model,created_at,updated_at,deleted_at,is_pinned"
+    private let selectCols = "id,content,folder_id,embedding_model,created_at,updated_at,deleted_at,is_pinned"
 
     func fetchMemos() async throws -> [Memo] {
         let rows: [MemoRow] = try await client
@@ -67,13 +70,13 @@ struct SupabaseMemoRepository: MemoRepository {
         return rows.map(map)
     }
 
-    func fetchCategories() async throws -> [Category] {
-        let rows: [CategoryRow] = try await client
-            .from("categories")
-            .select("id,name,created_by_ai")
+    func fetchFolders() async throws -> [Folder] {
+        let rows: [FolderRow] = try await client
+            .from("folders")
+            .select("id,parent_id,title,description")
             .execute()
             .value
-        return rows.map { Category(id: $0.id, name: $0.name, createdByAi: $0.created_by_ai) }
+        return rows.map { Folder(id: $0.id, parentId: $0.parent_id, title: $0.title, description: $0.description) }
     }
 
     // 클라이언트가 id를 생성해 넘긴다 → 오프라인 생성분이 온라인 flush돼도 같은 id(서버id=로컬id).
@@ -114,55 +117,64 @@ struct SupabaseMemoRepository: MemoRepository {
     func relatedMemos(memoId: UUID) async throws -> [RelatedMemo] {
         struct Params: Encodable { let p_memo_id: UUID }
         struct RelatedRow: Decodable {
-            let id: UUID; let content: String; let category_id: UUID?; let similarity: Double
+            let id: UUID; let content: String; let folder_id: UUID?; let similarity: Double
         }
         let rows: [RelatedRow] = try await client
             .rpc("related_memos", params: Params(p_memo_id: memoId))
             .execute()
             .value
         return rows.map {
-            RelatedMemo(id: $0.id, content: $0.content, categoryId: $0.category_id, similarity: $0.similarity)
+            RelatedMemo(id: $0.id, content: $0.content, folderId: $0.folder_id, similarity: $0.similarity)
         }
     }
 
-    func setCategory(memoId: UUID, categoryId: UUID?) async throws {
-        struct Upd: Encodable { let category_id: UUID? }
+    func setFolder(memoId: UUID, folderId: UUID?) async throws {
+        struct Upd: Encodable { let folder_id: UUID? }
         try await client.from("memos")
-            .update(Upd(category_id: categoryId))
+            .update(Upd(folder_id: folderId))
             .eq("id", value: memoId)
             .execute()
     }
 
-    func createCategory(name: String) async throws -> Category {
+    func createFolder(title: String, description: String?, parentId: UUID?) async throws -> Folder {
         guard let userId = client.auth.currentUser?.id else {
             throw NSError(domain: "memo", code: 401,
                           userInfo: [NSLocalizedDescriptionKey: "로그인 필요"])
         }
-        // 사용자 정의 카테고리(created_by_ai=false). 같은 이름 있으면 그거 재사용(upsert).
-        struct Ins: Encodable { let user_id: UUID; let name: String; let created_by_ai: Bool }
-        let row: CategoryRow = try await client.from("categories")
-            .upsert(Ins(user_id: userId, name: name, created_by_ai: false), onConflict: "user_id,name")
-            .select("id,name,created_by_ai")
+        // 깊이(≤3)·순환·형제 이름 중복은 서버(트리거/유니크 인덱스)가 강제 → 위반 시 throw.
+        struct Ins: Encodable { let user_id: UUID; let parent_id: UUID?; let title: String; let description: String? }
+        let row: FolderRow = try await client.from("folders")
+            .insert(Ins(user_id: userId, parent_id: parentId, title: title, description: description))
+            .select("id,parent_id,title,description")
             .single()
             .execute()
             .value
-        return Category(id: row.id, name: row.name, createdByAi: row.created_by_ai)
+        return Folder(id: row.id, parentId: row.parent_id, title: row.title, description: row.description)
     }
 
-    // 카테고리 이름 변경. unique(user_id,name) 충돌 시 오류 → 호출부에서 "병합" 유도.
-    func renameCategory(id: UUID, name: String) async throws {
-        struct Upd: Encodable { let name: String }
-        try await client.from("categories")
-            .update(Upd(name: name))
+    // 제목/설명 변경. 형제 이름 중복 시 서버 유니크 인덱스가 오류 → 호출부 안내.
+    func updateFolder(id: UUID, title: String, description: String?) async throws {
+        struct Upd: Encodable { let title: String; let description: String? }
+        try await client.from("folders")
+            .update(Upd(title: title, description: description))
             .eq("id", value: id)
             .execute()
     }
 
-    // source 카테고리의 메모를 target으로 옮기고 source 삭제(서버 트랜잭션 RPC).
-    func mergeCategory(source: UUID, into target: UUID) async throws {
-        struct Params: Encodable { let p_source: UUID; let p_target: UUID }
-        try await client
-            .rpc("merge_categories", params: Params(p_source: source, p_target: target))
+    // 폴더 이동(부모 변경). 깊이 초과·순환은 서버 트리거가 거부 → throw.
+    func reparentFolder(id: UUID, parentId: UUID?) async throws {
+        struct Upd: Encodable { let parent_id: UUID? }
+        try await client.from("folders")
+            .update(Upd(parent_id: parentId))
+            .eq("id", value: id)
+            .execute()
+    }
+
+    // 빈 폴더만 삭제(호출부에서 자식/메모 0 확인). 자식 있으면 on delete restrict가 거부.
+    func deleteFolder(id: UUID) async throws {
+        try await client.from("folders")
+            .delete()
+            .eq("id", value: id)
             .execute()
     }
 
@@ -184,7 +196,7 @@ struct SupabaseMemoRepository: MemoRepository {
     }
 
     private func map(_ r: MemoRow) -> Memo {
-        Memo(id: r.id, content: r.content, categoryId: r.category_id,
+        Memo(id: r.id, content: r.content, folderId: r.folder_id,
              embeddingModel: r.embedding_model,
              createdAt: parseDate(r.created_at), updatedAt: parseDate(r.updated_at),
              deletedAt: r.deleted_at.map { parseDate($0) },
