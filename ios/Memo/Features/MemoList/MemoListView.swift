@@ -132,20 +132,37 @@ struct MemoListView: View {
     // 스크롤 밖 고정 헤더: 제목 · 검색(접힘) · 폴더 위치 · 오프라인 배너
     private var fixedHeader: some View {
         VStack(alignment: .leading, spacing: Space.x4) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("메모").font(.appLargeTitle).foregroundStyle(AppColor.textPrimary)
-                Spacer()
+            HStack(alignment: .center, spacing: Space.x2) {
+                // 현재 폴더 제목 = 드로어 여는 버튼(Liquid Glass)
+                Button { openDrawer() } label: {
+                    HStack(spacing: Space.x2) {
+                        Image(systemName: "line.3.horizontal").font(.system(size: 17, weight: .semibold))
+                        Text(vm.currentTitle).font(.appLargeTitle).lineLimit(1)
+                        Image(systemName: "chevron.down").font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(AppColor.textSecondary)
+                    }
+                    .foregroundStyle(AppColor.textPrimary)
+                    .padding(.leading, Space.x4).padding(.trailing, Space.x4)
+                    .padding(.vertical, Space.x2)
+                    .glassBg(Capsule())
+                }
+                .buttonStyle(.plain)
+
+                Spacer(minLength: Space.x1)
+
                 Menu {
                     Picker("정렬", selection: $vm.sortOrder) {
                         ForEach(MemoSort.allCases) { s in Text(s.label).tag(s) }
                     }
                 } label: {
-                    Image(systemName: "line.3.horizontal.decrease.circle")
-                        .font(.system(size: 20)).foregroundStyle(AppColor.textSecondary)
+                    Image(systemName: "line.3.horizontal.decrease")
+                        .font(.system(size: 18, weight: .semibold)).foregroundStyle(AppColor.textPrimary)
+                        .frame(width: 44, height: 44).glassBg(Circle())
                 }
                 Button { showSettings = true } label: {
                     Image(systemName: "gearshape")
-                        .font(.system(size: 20)).foregroundStyle(AppColor.textSecondary)
+                        .font(.system(size: 18, weight: .semibold)).foregroundStyle(AppColor.textPrimary)
+                        .frame(width: 44, height: 44).glassBg(Circle())
                 }
             }
             .padding(.top, Space.x2)
@@ -154,8 +171,6 @@ struct MemoListView: View {
                 searchField
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
-
-            folderTabButton
 
             if vm.offline {
                 HStack(spacing: Space.x2) {
@@ -203,22 +218,6 @@ struct MemoListView: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
-    // 현재 폴더 위치 표시 + 탭하면 좌측 드로어 열림.
-    private var folderTabButton: some View {
-        Button { openDrawer() } label: {
-            HStack(spacing: Space.x2) {
-                Image(systemName: "sidebar.left").font(.system(size: 15, weight: .semibold))
-                Text(vm.currentTitle).font(.appSubhead).lineLimit(1)
-                Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold))
-                Spacer(minLength: 0)
-            }
-            .foregroundStyle(AppColor.textPrimary)
-            .padding(.horizontal, Space.x3).padding(.vertical, Space.x2)
-            .background(AppColor.fieldBg)
-            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-        }
-        .buttonStyle(.plain)
-    }
 
     @ViewBuilder
     private var listOrEmpty: some View {
@@ -311,17 +310,18 @@ struct FolderDrawerView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("폴더").font(.appHeadline).foregroundStyle(AppColor.textPrimary)
+                Text("폴더").font(.appTitle).foregroundStyle(AppColor.textPrimary)
                 Spacer()
                 Button { onClose() } label: {
-                    Image(systemName: "xmark").font(.system(size: 14, weight: .semibold))
+                    Image(systemName: "xmark").font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(AppColor.textTertiary)
+                        .frame(width: 40, height: 40)
                 }
             }
-            .padding(.horizontal, Space.x4).padding(.top, Space.x10).padding(.bottom, Space.x3)
+            .padding(.horizontal, Space.x4).padding(.top, 72).padding(.bottom, Space.x4)
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Space.x1) {
                     row(title: String(localized: "전체"), icon: "tray.full", depth: 0, count: nil,
                         selected: vm.currentFolderId == nil && !vm.unclassifiedMode) {
                         vm.goToRoot(); onClose()
@@ -333,13 +333,13 @@ struct FolderDrawerView: View {
                             vm.enterFolder(node.folder.id); onClose()
                         }
                     }
-                    Divider().overlay(AppColor.borderDefault).padding(.vertical, Space.x2)
+                    Divider().overlay(AppColor.borderDefault).padding(.vertical, Space.x3)
                     row(title: String(localized: "미분류"), icon: "tray", depth: 0, count: nil,
                         selected: vm.unclassifiedMode) {
                         vm.enterUnclassified(); onClose()
                     }
                 }
-                .padding(.horizontal, Space.x3).padding(.bottom, Space.x6)
+                .padding(.horizontal, Space.x3).padding(.bottom, Space.x10)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -348,22 +348,33 @@ struct FolderDrawerView: View {
     private func row(title: String, icon: String, depth: Int, count: Int?,
                      selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: Space.x2) {
-                if depth > 0 { Spacer().frame(width: CGFloat(depth) * 16) }
-                Image(systemName: icon).font(.system(size: 14)).frame(width: 18)
+            HStack(spacing: Space.x3) {
+                if depth > 0 { Spacer().frame(width: CGFloat(depth) * 20) }
+                Image(systemName: icon).font(.system(size: 18)).frame(width: 24)
                     .foregroundStyle(selected ? AppColor.accent : AppColor.textSecondary)
-                Text(title).font(.appSubhead).lineLimit(1)
+                Text(title).font(.appBody).lineLimit(1)
                     .foregroundStyle(selected ? AppColor.accent : AppColor.textPrimary)
                 Spacer(minLength: 0)
                 if let count, count > 0 {
-                    Text("\(count)").font(.appCaption).foregroundStyle(AppColor.textTertiary)
+                    Text("\(count)").font(.appSubhead).foregroundStyle(AppColor.textTertiary)
                 }
             }
-            .padding(.vertical, Space.x2).padding(.horizontal, Space.x2)
+            .padding(.vertical, Space.x3).padding(.horizontal, Space.x3)
             .background(selected ? AppColor.accent.opacity(0.12) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+// Liquid Glass(iOS 26+) — 이하 버전은 은은한 배경으로 폴백.
+extension View {
+    @ViewBuilder func glassBg(_ shape: some Shape) -> some View {
+        if #available(iOS 26.0, *) {
+            self.glassEffect(.regular, in: shape)
+        } else {
+            self.background(AppColor.fieldBg, in: shape)
+        }
     }
 }
