@@ -400,8 +400,19 @@ final class MemoListViewModel {
     }
 
     // 폴더 이동. 깊이 초과·순환은 서버 트리거가 거부.
-    func reparentFolder(id: UUID, to parentId: UUID?) async -> Bool {
+    // 이동 가능 여부 — 순환(자기 후손 아래)·깊이(부모 깊이<3)·현재 부모 그대로를 막는다.
+    // 드래그앤드롭/메뉴 공통 가드(서버·repo엔 검증 없음).
+    func canReparent(id: UUID, to parentId: UUID?) -> Bool {
         guard id != parentId else { return false }
+        guard parentId != foldersById[id]?.parentId else { return false } // 이미 그 위치
+        guard let p = parentId else { return true }                        // 최상위로는 항상 허용
+        if descendantIds(of: id).contains(p) { return false }              // 순환
+        if depth(of: p) >= kMaxFolderDepth { return false }                // 깊이 초과
+        return true
+    }
+
+    func reparentFolder(id: UUID, to parentId: UUID?) async -> Bool {
+        guard canReparent(id: id, to: parentId) else { return false }
         do { try await repo.reparentFolder(id: id, parentId: parentId); await load(); return true }
         catch { errorText = error.localizedDescription; return false }
     }

@@ -57,7 +57,7 @@ struct MemoListView: View {
             }
         }
         .sheet(isPresented: $showSettings) {
-            SettingsView(auth: auth, vm: vm)
+            SettingsView(auth: auth)
         }
         // 스와이프 편집 — ComposeView 프리필(상세 편집과 동일 패턴)
         .sheet(item: $editingMemo) { m in
@@ -136,8 +136,7 @@ struct MemoListView: View {
                 // 현재 폴더 제목 = 드로어 여는 버튼(Liquid Glass)
                 Button { openDrawer() } label: {
                     HStack(spacing: Space.x2) {
-                        Image(systemName: "line.3.horizontal").font(.system(size: 17, weight: .semibold))
-                        Text(vm.currentTitle).font(.appLargeTitle).lineLimit(1)
+                        Text(vm.currentTitle).font(.system(size: 26, weight: .bold)).lineLimit(1)
                         Image(systemName: "chevron.down").font(.system(size: 13, weight: .bold))
                             .foregroundStyle(AppColor.textSecondary)
                     }
@@ -307,11 +306,18 @@ struct FolderDrawerView: View {
     let width: CGFloat
     let onClose: () -> Void
 
+    @State private var showManage = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("폴더").font(.appTitle).foregroundStyle(AppColor.textPrimary)
                 Spacer()
+                Button { showManage = true } label: {
+                    Image(systemName: "slider.horizontal.3").font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(AppColor.textSecondary)
+                        .frame(width: 40, height: 40)
+                }
                 Button { onClose() } label: {
                     Image(systemName: "xmark").font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(AppColor.textTertiary)
@@ -343,6 +349,16 @@ struct FolderDrawerView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .sheet(isPresented: $showManage) {
+            NavigationStack {
+                FolderManageView(vm: vm)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("완료") { showManage = false }
+                        }
+                    }
+            }
+        }
     }
 
     private func row(title: String, icon: String, depth: Int, count: Int?,

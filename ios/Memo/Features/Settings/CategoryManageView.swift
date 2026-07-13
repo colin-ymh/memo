@@ -18,7 +18,8 @@ struct FolderManageView: View {
     @Bindable var vm: MemoListViewModel
 
     @State private var editor: FolderEditorMode?
-    @State private var reparentTarget: Folder?
+    @State private var dropTarget: UUID?          // 폴더 위로 끌 때 하이라이트 대상
+    @State private var rootTargeted = false        // 최상위 드롭행 하이라이트
     @State private var busy = false
 
     var body: some View {
@@ -29,11 +30,12 @@ struct FolderManageView: View {
                     .foregroundStyle(AppColor.textSecondary)
             } else {
                 Section {
+                    rootDropRow
                     ForEach(tree, id: \.folder.id) { row in
                         rowView(row.folder, depth: row.depth)
                     }
                 } footer: {
-                    Text("＋로 하위 폴더 추가, ⋯로 편집·이동·삭제. 삭제는 비어 있는 폴더만 가능하고, 최대 3단계까지 만들 수 있어요.")
+                    Text("폴더를 꾹 눌러 다른 폴더 위로 끌면 그 아래로 옮겨져요. 맨 위 ‘최상위’로 끌면 밖으로 나와요. ＋로 하위 폴더 추가, ⋯로 편집·삭제. 삭제는 비어 있는 폴더만, 최대 3단계까지.")
                 }
             }
         }
@@ -46,26 +48,23 @@ struct FolderManageView: View {
             }
         }
         .sheet(item: $editor) { mode in FolderEditorView(mode: mode, vm: vm) }
-        // 이동 대상 선택
-        .confirmationDialog("어디로 옮길까요?",
-                            isPresented: Binding(get: { reparentTarget != nil },
-                                                 set: { if !$0 { reparentTarget = nil } }),
-                            titleVisibility: .visible,
-                            presenting: reparentTarget) { f in
-            if f.parentId != nil {
-                Button("최상위로 이동") {
-                    Task { busy = true; _ = await vm.reparentFolder(id: f.id, to: nil); busy = false }
-                }
-            }
-            ForEach(validParents(for: f)) { p in
-                Button("\(vm.folderPath(p.id) ?? p.title) 아래로") {
-                    Task { busy = true; _ = await vm.reparentFolder(id: f.id, to: p.id); busy = false }
-                }
-            }
-            Button("취소", role: .cancel) {}
-        } message: { _ in
-            Text("깊이가 3단계를 넘거나 순환이 되는 이동은 자동으로 막혀요.")
+    }
+
+    // 최상위로 꺼내는 드롭 존 — 여기로 끌면 부모 없음(root)으로.
+    private var rootDropRow: some View {
+        HStack(spacing: Space.x2) {
+            Image(systemName: "arrow.up.to.line").font(.system(size: 14)).foregroundStyle(AppColor.textSecondary)
+            Text("최상위").foregroundStyle(AppColor.textSecondary)
+            Spacer()
         }
+        .padding(.vertical, 2)
+        .listRowBackground(rootTargeted ? AppColor.accent.opacity(0.15) : nil)
+        .dropDestination(for: String.self) { items, _ in
+            guard let s = items.first, let dragged = UUID(uuidString: s),
+                  vm.canReparent(id: dragged, to: nil) else { return false }
+            Task { busy = true; _ = await vm.reparentFolder(id: dragged, to: nil); busy = false }
+            return true
+        } isTargeted: { rootTargeted = $0 }
     }
 
     private func rowView(_ f: Folder, depth: Int) -> some View {
@@ -91,7 +90,6 @@ struct FolderManageView: View {
             // 편집/이동/삭제 메뉴 — 눈에 보이는 ⋯
             Menu {
                 Button { editor = .edit(f) } label: { Label("편집", systemImage: "pencil") }
-                Button { reparentTarget = f } label: { Label("이동", systemImage: "folder") }
                 if vm.canDelete(f.id) {
                     Button(role: .destructive) {
                         Task { busy = true; _ = await vm.deleteFolder(id: f.id); busy = false }
@@ -101,15 +99,16 @@ struct FolderManageView: View {
                 Image(systemName: "ellipsis.circle").font(.system(size: 18)).foregroundStyle(AppColor.textSecondary)
             }
         }
-    }
-
-    // 이동 후보: 자기 자신·후손 제외, 현재 부모 제외, 부모가 되면 3단계 이내여야(부모 깊이<3).
-    private func validParents(for f: Folder) -> [Folder] {
-        let desc = vm.descendantIds(of: f.id)
-        return vm.allFolders
-            .filter { $0.id != f.id && $0.id != f.parentId
-                && !desc.contains($0.id) && vm.depth(of: $0.id) < kMaxFolderDepth }
-            .sorted { $0.title < $1.title }
+        .draggable(f.id.uuidString)
+        .listRowBackground(dropTarget == f.id ? AppColor.accent.opacity(0.15) : nil)
+        .dropDestination(for: String.self) { items, _ in
+            guard let s = items.first, let dragged = UUID(uuidString: s),
+                  vm.canReparent(id: dragged, to: f.id) else { return false }
+            Task { busy = true; _ = await vm.reparentFolder(id: dragged, to: f.id); busy = false }
+            return true
+        } isTargeted: { over in
+            dropTarget = over ? f.id : (dropTarget == f.id ? nil : dropTarget)
+        }
     }
 }
 

@@ -2,7 +2,6 @@ import SwiftUI
 
 struct SettingsView: View {
     let auth: AuthService
-    @Bindable var vm: MemoListViewModel
     @State private var settings = AppSettings.shared
     @Environment(\.dismiss) private var dismiss
     @State private var showDeleteConfirm = false
@@ -40,14 +39,6 @@ struct SettingsView: View {
                         ForEach(AppLanguage.allCases) { l in
                             Text(l.label).tag(l)
                         }
-                    }
-                }
-
-                Section("정리") {
-                    NavigationLink {
-                        FolderManageView(vm: vm)
-                    } label: {
-                        LabeledContent("폴더 관리", value: "\(vm.allFolders.count)")
                     }
                 }
 
