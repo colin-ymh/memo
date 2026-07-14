@@ -23,21 +23,27 @@ struct FolderManageView: View {
     @State private var busy = false
 
     var body: some View {
-        List {
+        // List가 아닌 ScrollView+VStack — List 행에선 .draggable/.dropDestination이
+        // 제스처를 삼켜 드래그 이동이 불안정. 스크롤뷰에선 안정적으로 동작.
+        ScrollView {
             let tree = vm.orderedTree()
-            if tree.isEmpty {
-                Text("아직 폴더가 없어요. 오른쪽 위 ＋로 첫 폴더를 만들어보세요.")
-                    .foregroundStyle(AppColor.textSecondary)
-            } else {
-                Section {
+            VStack(alignment: .leading, spacing: Space.x1) {
+                if tree.isEmpty {
+                    Text("아직 폴더가 없어요. 오른쪽 위 ＋로 첫 폴더를 만들어보세요.")
+                        .foregroundStyle(AppColor.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, Space.x4)
+                } else {
                     rootDropRow
                     ForEach(tree, id: \.folder.id) { row in
                         rowView(row.folder, depth: row.depth)
                     }
-                } footer: {
                     Text("폴더를 꾹 눌러 다른 폴더 위로 끌면 그 아래로 옮겨져요. 맨 위 ‘최상위’로 끌면 밖으로 나와요. ＋로 하위 폴더 추가, ⋯로 편집·삭제. 삭제는 비어 있는 폴더만, 최대 3단계까지.")
+                        .font(.appCaption).foregroundStyle(AppColor.textTertiary)
+                        .padding(.horizontal, Space.x2).padding(.top, Space.x4)
                 }
             }
+            .padding(Space.x3)
         }
         .disabled(busy)
         .navigationTitle("폴더 관리")
@@ -57,8 +63,11 @@ struct FolderManageView: View {
             Text("최상위").foregroundStyle(AppColor.textSecondary)
             Spacer()
         }
-        .padding(.vertical, 2)
-        .listRowBackground(rootTargeted ? AppColor.accent.opacity(0.15) : nil)
+        .padding(.vertical, Space.x3).padding(.horizontal, Space.x3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(rootTargeted ? AppColor.accent.opacity(0.15) : AppColor.fieldBg.opacity(0.5),
+                    in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .contentShape(Rectangle())
         .dropDestination(for: String.self) { items, _ in
             guard let s = items.first, let dragged = UUID(uuidString: s),
                   vm.canReparent(id: dragged, to: nil) else { return false }
@@ -99,8 +108,12 @@ struct FolderManageView: View {
                 Image(systemName: "ellipsis.circle").font(.system(size: 18)).foregroundStyle(AppColor.textSecondary)
             }
         }
+        .padding(.vertical, Space.x3).padding(.horizontal, Space.x3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(dropTarget == f.id ? AppColor.accent.opacity(0.15) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .contentShape(Rectangle())
         .draggable(f.id.uuidString)
-        .listRowBackground(dropTarget == f.id ? AppColor.accent.opacity(0.15) : nil)
         .dropDestination(for: String.self) { items, _ in
             guard let s = items.first, let dragged = UUID(uuidString: s),
                   vm.canReparent(id: dragged, to: f.id) else { return false }
