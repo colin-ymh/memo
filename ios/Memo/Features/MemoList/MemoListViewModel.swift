@@ -88,7 +88,8 @@ final class MemoListViewModel {
 
     // 특정 부모의 자식 폴더(제목순). parent nil = 최상위 폴더들.
     func subfolders(of parent: UUID?) -> [Folder] {
-        allFolders.filter { $0.parentId == parent }.sorted { $0.title < $1.title }
+        allFolders.filter { $0.parentId == parent }
+            .sorted { ($0.position, $0.title) < ($1.position, $1.title) }
     }
     var currentSubfolders: [Folder] { subfolders(of: currentFolderId) }
 
@@ -128,6 +129,13 @@ final class MemoListViewModel {
         func walk(_ p: UUID) { for c in allFolders where c.parentId == p { acc.insert(c.id); walk(c.id) } }
         walk(id)
         return acc
+    }
+
+    // 이 폴더 서브트리의 높이(자기=1). 이동 시 뎁스 상한 계산용.
+    func subtreeHeight(of id: UUID) -> Int {
+        let kids = allFolders.filter { $0.parentId == id }
+        if kids.isEmpty { return 1 }
+        return 1 + (kids.map { subtreeHeight(of: $0.id) }.max() ?? 0)
     }
 
     func childCount(_ id: UUID) -> Int { allFolders.filter { $0.parentId == id }.count }
@@ -170,7 +178,7 @@ final class MemoListViewModel {
         var counts: [UUID: Int] = [:]
         for m in mm { if let f = m.folderId { counts[f, default: 0] += 1 } }
         folderMemoCounts = counts
-        allFolders = ff.sorted { $0.title < $1.title }
+        allFolders = ff.sorted { ($0.position, $0.title) < ($1.position, $1.title) }
         memos = mm
         // 현재 보고 있던 폴더가 사라졌으면 루트로.
         if let cur = currentFolderId, foldersById[cur] == nil {
@@ -416,6 +424,29 @@ final class MemoListViewModel {
         guard canReparent(id: id, to: parentId) else { return false }
         do { try await repo.reparentFolder(id: id, parentId: parentId); await load(); return true }
         catch { errorText = error.localizedDescription; return false }
+    }
+
+    // 드래그 재정렬 확정: id를 toParent의 index 위치로. 저장 후 load, 실패 시 load로 롤백.
+    func moveFolder(id: UUID, toParent: UUID?, index: Int) async -> Bool {
+        let oldParent = foldersById[id]?.parentId
+        // 새 부모의 자식 목록(자기 제외)에 index로 삽입.
+        var newSiblings = subfolders(of: toParent).map { $0.id }.filter { $0 != id }
+        let clamped = max(0, min(index, newSiblings.count))
+        newSiblings.insert(id, at: clamped)
+        do {
+            try await repo.updateFolderParentAndPosition(id: id, parentId: toParent, position: clamped)
+            try await repo.setFolderPositions(newSiblings.enumerated().map { ($1, $0) })
+            if oldParent != toParent {
+                let oldSiblings = subfolders(of: oldParent).map { $0.id }.filter { $0 != id }
+                try await repo.setFolderPositions(oldSiblings.enumerated().map { ($1, $0) })
+            }
+            await load()
+            return true
+        } catch {
+            errorText = error.localizedDescription
+            await load()
+            return false
+        }
     }
 
     // 빈 폴더만 삭제.
