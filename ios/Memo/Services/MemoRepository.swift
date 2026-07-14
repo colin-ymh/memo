@@ -19,7 +19,7 @@ protocol MemoRepository: Sendable {
     func setPinned(memoId: UUID, pinned: Bool) async throws
     func searchSemantic(query: String, count: Int) async throws -> [SemanticHit]
     // 폴더 트리 CRUD. 깊이(≤3)·순환은 서버 트리거가 최종 방어(앱도 사전 차단).
-    func createFolder(title: String, description: String?, parentId: UUID?) async throws -> Folder
+    func createFolder(title: String, description: String?, parentId: UUID?, position: Int) async throws -> Folder
     func updateFolder(id: UUID, title: String, description: String?) async throws
     func reparentFolder(id: UUID, parentId: UUID?) async throws
     func deleteFolder(id: UUID) async throws   // 빈 폴더만(호출부에서 사전 확인)
@@ -41,6 +41,7 @@ private struct FolderRow: Decodable {
     let parent_id: UUID?
     let title: String
     let description: String?
+    let position: Int
 }
 
 // ISO8601DateFormatter는 스레드세이프(파싱/포맷). Swift6에 Sendable로 인식 안 돼 표시.
@@ -73,10 +74,10 @@ struct SupabaseMemoRepository: MemoRepository {
     func fetchFolders() async throws -> [Folder] {
         let rows: [FolderRow] = try await client
             .from("folders")
-            .select("id,parent_id,title,description")
+            .select("id,parent_id,title,description,position")
             .execute()
             .value
-        return rows.map { Folder(id: $0.id, parentId: $0.parent_id, title: $0.title, description: $0.description) }
+        return rows.map { Folder(id: $0.id, parentId: $0.parent_id, title: $0.title, description: $0.description, position: $0.position) }
     }
 
     // 클라이언트가 id를 생성해 넘긴다 → 오프라인 생성분이 온라인 flush돼도 같은 id(서버id=로컬id).
@@ -137,20 +138,20 @@ struct SupabaseMemoRepository: MemoRepository {
             .execute()
     }
 
-    func createFolder(title: String, description: String?, parentId: UUID?) async throws -> Folder {
+    func createFolder(title: String, description: String?, parentId: UUID?, position: Int) async throws -> Folder {
         guard let userId = client.auth.currentUser?.id else {
             throw NSError(domain: "memo", code: 401,
                           userInfo: [NSLocalizedDescriptionKey: "로그인 필요"])
         }
         // 깊이(≤3)·순환·형제 이름 중복은 서버(트리거/유니크 인덱스)가 강제 → 위반 시 throw.
-        struct Ins: Encodable { let user_id: UUID; let parent_id: UUID?; let title: String; let description: String? }
+        struct Ins: Encodable { let user_id: UUID; let parent_id: UUID?; let title: String; let description: String?; let position: Int }
         let row: FolderRow = try await client.from("folders")
-            .insert(Ins(user_id: userId, parent_id: parentId, title: title, description: description))
-            .select("id,parent_id,title,description")
+            .insert(Ins(user_id: userId, parent_id: parentId, title: title, description: description, position: position))
+            .select("id,parent_id,title,description,position")
             .single()
             .execute()
             .value
-        return Folder(id: row.id, parentId: row.parent_id, title: row.title, description: row.description)
+        return Folder(id: row.id, parentId: row.parent_id, title: row.title, description: row.description, position: row.position)
     }
 
     // 제목/설명 변경. 형제 이름 중복 시 서버 유니크 인덱스가 오류 → 호출부 안내.

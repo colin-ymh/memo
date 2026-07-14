@@ -382,8 +382,9 @@ final class MemoListViewModel {
         guard !t.isEmpty else { return nil }
         let desc = description?.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
+            let nextPos = (allFolders.filter { $0.parentId == parentId }.map { $0.position }.max() ?? -1) + 1
             let folder = try await repo.createFolder(
-                title: t, description: (desc?.isEmpty == false) ? desc : nil, parentId: parentId)
+                title: t, description: (desc?.isEmpty == false) ? desc : nil, parentId: parentId, position: nextPos)
             await load()
             return folder
         } catch { errorText = error.localizedDescription; return nil }

@@ -65,4 +65,5 @@ struct Folder: Identifiable, Codable, Sendable, Hashable {
     var parentId: UUID?
     var title: String
     var description: String?
+    var position: Int = 0
 }
