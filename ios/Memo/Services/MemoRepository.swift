@@ -22,6 +22,8 @@ protocol MemoRepository: Sendable {
     func createFolder(title: String, description: String?, parentId: UUID?, position: Int) async throws -> Folder
     func updateFolder(id: UUID, title: String, description: String?) async throws
     func reparentFolder(id: UUID, parentId: UUID?) async throws
+    func updateFolderParentAndPosition(id: UUID, parentId: UUID?, position: Int) async throws
+    func setFolderPositions(_ items: [(id: UUID, position: Int)]) async throws
     func deleteFolder(id: UUID) async throws   // 빈 폴더만(호출부에서 사전 확인)
 }
 
@@ -170,6 +172,26 @@ struct SupabaseMemoRepository: MemoRepository {
             .update(Upd(parent_id: parentId))
             .eq("id", value: id)
             .execute()
+    }
+
+    // 이동 노드의 부모+순서 동시 변경. 깊이/순환은 서버 트리거가 거부 → throw.
+    func updateFolderParentAndPosition(id: UUID, parentId: UUID?, position: Int) async throws {
+        struct Upd: Encodable { let parent_id: UUID?; let position: Int }
+        try await client.from("folders")
+            .update(Upd(parent_id: parentId, position: position))
+            .eq("id", value: id)
+            .execute()
+    }
+
+    // 형제 그룹 position 일괄 갱신(작은 N, 순차).
+    func setFolderPositions(_ items: [(id: UUID, position: Int)]) async throws {
+        struct Upd: Encodable { let position: Int }
+        for it in items {
+            try await client.from("folders")
+                .update(Upd(position: it.position))
+                .eq("id", value: it.id)
+                .execute()
+        }
     }
 
     // 빈 폴더만 삭제(호출부에서 자식/메모 0 확인). 자식 있으면 on delete restrict가 거부.
