@@ -38,3 +38,16 @@ targets:
     configFiles:
       Debug: Memo/Config/Secrets.xcconfig
       Release: Memo/Config/Secrets.xcconfig
+    scheme:
+      testTargets:
+        - MemoTests
+  MemoTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: MemoTests
+    dependencies:
+      - target: Memo
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: true
