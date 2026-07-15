@@ -26,16 +26,23 @@ enum FolderReorder {
     }
 
     // (대상 행, 구역) → (parentId, index). index는 드래그 제외 형제 공간 기준.
+    // mokjang 참고 시맨틱: into=자식 맨 뒤, after+대상이_자식보유=대상의 첫 자식(안 맨 위), 그 외 형제.
     static func resolve(flat: [FlatFolder], targetId: UUID, zone: DropZone) -> DropResolution? {
         guard let target = flat.first(where: { $0.id == targetId }) else { return nil }
+        let children = flat.filter { $0.parentId == targetId }
         switch zone {
         case .into:
-            let childCount = flat.filter { $0.parentId == targetId }.count
-            return DropResolution(parentId: targetId, index: childCount)   // 자식 맨 뒤
-        case .before, .after:
-            let siblings = flat.filter { $0.parentId == target.parentId }
-            let idx = siblings.firstIndex { $0.id == targetId } ?? 0
-            return DropResolution(parentId: target.parentId, index: zone == .before ? idx : idx + 1)
+            return DropResolution(parentId: targetId, index: children.count)   // 자식 맨 뒤
+        case .before:
+            let sibs = flat.filter { $0.parentId == target.parentId }
+            return DropResolution(parentId: target.parentId, index: sibs.firstIndex { $0.id == targetId } ?? 0)
+        case .after:
+            if !children.isEmpty {
+                return DropResolution(parentId: targetId, index: 0)            // 자식 있으면 그 안 맨 위
+            }
+            let sibs = flat.filter { $0.parentId == target.parentId }
+            let idx = sibs.firstIndex { $0.id == targetId } ?? 0
+            return DropResolution(parentId: target.parentId, index: idx + 1)
         }
     }
 }

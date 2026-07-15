@@ -13,14 +13,25 @@ final class FolderReorderTests: XCTestCase {
          FlatFolder(id: daily, parentId: nil, depth: 1)]
     }
 
-    // 대표 3케이스 (드래그 노드는 flat 밖 = 서류)
+    // into: 대상(자식 없음)의 자식 맨 뒤 = index 0
     func test_into_메모_자식() {
         XCTAssertEqual(FolderReorder.resolve(flat: flat, targetId: memoF, zone: .into),
                        DropResolution(parentId: memoF, index: 0))
     }
+    // into: 대상(자식 2개)의 자식 맨 뒤 = index 2
+    func test_into_개발_자식맨뒤() {
+        XCTAssertEqual(FolderReorder.resolve(flat: flat, targetId: dev, zone: .into),
+                       DropResolution(parentId: dev, index: 2))
+    }
+    // after: 대상(자식 없음) → 형제로 뒤
     func test_after_메모_개발_마지막자식() {
         XCTAssertEqual(FolderReorder.resolve(flat: flat, targetId: memoF, zone: .after),
                        DropResolution(parentId: dev, index: 2)) // 가챠맵,메모 다음
+    }
+    // after: 대상(자식 보유) → 그 안 첫 자식(맨 위)
+    func test_after_개발_자식첫자리() {
+        XCTAssertEqual(FolderReorder.resolve(flat: flat, targetId: dev, zone: .after),
+                       DropResolution(parentId: dev, index: 0))
     }
     func test_before_일상_최상위() {
         XCTAssertEqual(FolderReorder.resolve(flat: flat, targetId: daily, zone: .before),
