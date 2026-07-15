@@ -20,11 +20,11 @@ struct FolderManageView: View {
     @State private var editor: FolderEditorMode?
     @State private var busy = false
 
-    // 드래그 재정렬 상태
+    // 드래그 재정렬 상태 — 세로만으로 판단(대상 행 + 구역).
     @State private var draggingId: UUID?
     @State private var rowFrames: [UUID: CGRect] = [:]   // "tree" 좌표계 기준 행 프레임
-    @State private var dropGapIndex = 0                  // 현재 삽입 갭(0...행수)
-    @State private var dropDepth = 1                     // 현재 목표 뎁스(1-based)
+    @State private var dropTargetId: UUID?               // 현재 드롭 대상 행
+    @State private var dropZone: DropZone = .after       // before=위/into=가운데/after=아래
 
     // 좌표 상수(rowView 들여쓰기와 정합). Space.x3=12 = 행 좌측 패딩, 16 = depth당 들여쓰기.
     private let dragBaseX: CGFloat = 12
@@ -43,7 +43,7 @@ struct FolderManageView: View {
                     ForEach(tree, id: \.folder.id) { row in
                         rowView(row.folder, depth: row.depth)
                     }
-                    Text("폴더를 꾹 눌러 위아래로 끌면 순서가, 좌우로 끌면 뎁스가 바뀌어요(삽입선 참고). 다른 폴더 안/최상위로도 옮길 수 있어요. ＋로 하위 폴더 추가, ⋯로 편집·삭제. 삭제는 비어 있는 폴더만, 최대 3단계까지.")
+                    Text("폴더를 꾹 눌러 위/아래로 끌면 순서가 바뀌고, 폴더 위(가운데)에 놓으면 그 안으로 들어가요. ＋로 하위 폴더 추가, ⋯로 편집·삭제. 삭제는 비어 있는 폴더만, 최대 3단계까지.")
                         .font(.appCaption).foregroundStyle(AppColor.textTertiary)
                         .padding(.horizontal, Space.x2).padding(.top, Space.x4)
                 }
@@ -64,15 +64,17 @@ struct FolderManageView: View {
         .sheet(item: $editor) { mode in FolderEditorView(mode: mode, vm: vm) }
     }
 
-    // 삽입선 — 목표 갭 y에 가로선, dropDepth만큼 들여쓰기.
+    // 삽입선 — before/after일 때만. 대상 행 위/아래 모서리에, 행 뎁스만큼 들여쓰기.
+    // (into는 rowView 배경 하이라이트로 표시.)
     @ViewBuilder private var insertionLine: some View {
-        if draggingId != nil {
-            let flat = flatExcludingDragged()
+        if draggingId != nil, dropZone != .into, let tid = dropTargetId, let r = rowFrames[tid] {
+            let depth = flatExcludingDragged().first { $0.id == tid }?.depth ?? 1
+            let y = (dropZone == .before ? r.minY : r.maxY) - 1.5
             Capsule().fill(AppColor.accent).frame(height: 3)
-                .padding(.leading, dragBaseX + CGFloat(dropDepth - 1) * dragIndentUnit)
+                .padding(.leading, dragBaseX + CGFloat(depth - 1) * dragIndentUnit)
                 .padding(.trailing, Space.x3)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .offset(y: gapY(flat: flat) - 1.5)
+                .offset(y: y)
                 .allowsHitTesting(false)
         }
     }
@@ -111,7 +113,9 @@ struct FolderManageView: View {
         }
         .padding(.vertical, Space.x3).padding(.horizontal, Space.x3)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.clear, in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .background((draggingId != nil && dropZone == .into && dropTargetId == f.id)
+                        ? AppColor.accent.opacity(0.15) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         .contentShape(Rectangle())
         .opacity(draggingId == f.id ? 0.35 : 1)
         .background(GeometryReader { g in
@@ -127,7 +131,7 @@ struct FolderManageView: View {
             .onChanged { value in
                 if case .second(true, let drag?) = value {
                     if draggingId == nil { draggingId = id }
-                    updateDrop(fingerX: drag.location.x, fingerY: drag.location.y)
+                    updateDrop(fingerY: drag.location.y)
                 }
             }
             .onEnded { _ in commitDrop() }
@@ -142,37 +146,47 @@ struct FolderManageView: View {
             .map { FlatFolder(id: $0.folder.id, parentId: $0.folder.parentId, depth: $0.depth + 1) }
     }
 
-    private func updateDrop(fingerX: CGFloat, fingerY: CGFloat) {
+    // 세로 위치만으로 대상 행 + 구역 결정. 행 상단 1/3=before, 하단 1/3=after, 가운데=into.
+    // into는 nest 가능할 때만(불가 시 after로 강등).
+    private func updateDrop(fingerY: CGFloat) {
         guard let dragging = draggingId else { return }
         let flat = flatExcludingDragged()
-        var gap = flat.count
-        for (i, ff) in flat.enumerated() {
-            if let r = rowFrames[ff.id], fingerY < r.midY { gap = i; break }
+        guard !flat.isEmpty else { dropTargetId = nil; return }
+
+        var target: FlatFolder?
+        var rel: CGFloat = 0.5
+        for ff in flat {
+            if let r = rowFrames[ff.id], fingerY >= r.minY, fingerY <= r.maxY {
+                target = ff
+                rel = r.height > 0 ? (fingerY - r.minY) / r.height : 0.5
+                break
+            }
         }
-        let rawDepth = Int(((fingerX - dragBaseX) / dragIndentUnit).rounded()) + 1
-        let sub = vm.subtreeHeight(of: dragging)
-        let range = FolderReorder.depthRange(flat: flat, gapIndex: gap,
-                                             subtreeHeight: sub, maxDepth: kMaxFolderDepth)
-        dropGapIndex = gap
-        dropDepth = min(max(rawDepth, range.lowerBound), range.upperBound)
+        if target == nil {   // 첫 행 위 / 마지막 행 아래
+            if let first = flat.first, let r = rowFrames[first.id], fingerY < r.minY {
+                target = first; rel = 0
+            } else if let last = flat.last {
+                target = last; rel = 1
+            }
+        }
+        guard let t = target else { dropTargetId = nil; return }
+
+        var zone: DropZone = rel < 0.33 ? .before : (rel > 0.67 ? .after : .into)
+        if zone == .into,
+           !FolderReorder.canNest(flat: flat, targetId: t.id,
+                                  subtreeHeight: vm.subtreeHeight(of: dragging), maxDepth: kMaxFolderDepth) {
+            zone = .after
+        }
+        dropTargetId = t.id
+        dropZone = zone
     }
 
     private func commitDrop() {
-        guard let dragging = draggingId else { return }
+        guard let dragging = draggingId, let target = dropTargetId else { draggingId = nil; return }
         let flat = flatExcludingDragged()
-        let res = FolderReorder.resolve(flat: flat, gapIndex: dropGapIndex, depth: dropDepth)
         draggingId = nil
+        guard let res = FolderReorder.resolve(flat: flat, targetId: target, zone: dropZone) else { return }
         Task { busy = true; _ = await vm.moveFolder(id: dragging, toParent: res.parentId, index: res.index); busy = false }
-    }
-
-    // 삽입 갭의 y(= 위 행 maxY와 아래 행 minY 중간, 끝/처음은 경계).
-    private func gapY(flat: [FlatFolder]) -> CGFloat {
-        guard !flat.isEmpty else { return 0 }
-        if dropGapIndex <= 0 { return rowFrames[flat[0].id]?.minY ?? 0 }
-        if dropGapIndex >= flat.count { return rowFrames[flat[flat.count - 1].id]?.maxY ?? 0 }
-        let above = rowFrames[flat[dropGapIndex - 1].id]?.maxY ?? 0
-        let below = rowFrames[flat[dropGapIndex].id]?.minY ?? 0
-        return (above + below) / 2
     }
 }
 
