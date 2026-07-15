@@ -1,5 +1,4 @@
 import SwiftUI
-import UniformTypeIdentifiers
 
 // 폴더 편집기 시트의 모드(생성/편집). 파일 스코프라 두 뷰가 공유.
 enum FolderEditorMode: Identifiable {
@@ -13,26 +12,26 @@ enum FolderEditorMode: Identifiable {
     }
 }
 
-// 폴더 관리 — 트리 편집. 생성/이름·설명 수정/드래그 이동(순서+뎁스)/삭제(빈 폴더만).
-// 드래그: 행별 DropDelegate가 그 행의 로컬 위치로 위/가운데/아래 판정(mokjang 참고 방식).
+// 폴더 관리 — 트리 편집. 생성/수정/드래그 이동(순서+뎁스)/삭제.
+// 드래그: .draggable + .dropDestination(행별). 드롭 시 로컬 location.y로 위/가운데/아래 판정.
+// 최상위로 빼기는 상단 "전체" 드롭행으로도 가능.
 struct FolderManageView: View {
     @Bindable var vm: MemoListViewModel
 
     @State private var editor: FolderEditorMode?
     @State private var busy = false
 
-    // 드래그 상태
-    @State private var draggingId: UUID?
-    @State private var dropTargetId: UUID?
-    @State private var dropZone: DropZone = .after
+    @State private var dropTargetId: UUID?         // 현재 하이라이트 행
+    @State private var rootTargeted = false        // "전체" 드롭행 하이라이트
     @State private var rowHeights: [UUID: CGFloat] = [:]
 
-    private let indentUnit: CGFloat = 16   // rowView 들여쓰기(depth*16)와 동일
+    private let indentUnit: CGFloat = 16
 
     var body: some View {
         ScrollView {
             let tree = vm.orderedTree()
             VStack(alignment: .leading, spacing: Space.x1) {
+                rootDropRow
                 if tree.isEmpty {
                     Text("아직 폴더가 없어요. 오른쪽 위 ＋로 첫 폴더를 만들어보세요.")
                         .foregroundStyle(AppColor.textSecondary)
@@ -42,7 +41,7 @@ struct FolderManageView: View {
                     ForEach(tree, id: \.folder.id) { row in
                         rowView(row.folder, depth: row.depth)
                     }
-                    Text("폴더를 끌어 위/아래 모서리에 놓으면 순서·형제, 폴더 가운데에 놓으면 그 안으로. ＋로 하위 폴더 추가, ⋯로 편집·삭제. 삭제는 비어 있는 폴더만, 최대 3단계까지.")
+                    Text("폴더를 끌어 다른 폴더 위/아래에 놓으면 순서·형제, 가운데에 놓으면 그 안으로. 맨 위 ‘전체’에 놓으면 최상위로. ＋로 하위 폴더 추가, ⋯로 편집·삭제. 삭제는 빈 폴더만, 최대 3단계.")
                         .font(.appCaption).foregroundStyle(AppColor.textTertiary)
                         .padding(.horizontal, Space.x2).padding(.top, Space.x4)
                 }
@@ -61,10 +60,28 @@ struct FolderManageView: View {
         .sheet(item: $editor) { mode in FolderEditorView(mode: mode, vm: vm) }
     }
 
+    // 최상위(전체)로 빼내는 드롭행 — 여기 놓으면 root 맨 뒤.
+    private var rootDropRow: some View {
+        HStack(spacing: Space.x2) {
+            Image(systemName: "tray.full").font(.system(size: 14)).foregroundStyle(AppColor.textSecondary)
+            Text("전체 (최상위)").foregroundStyle(AppColor.textSecondary)
+            Spacer()
+        }
+        .padding(.vertical, Space.x3).padding(.horizontal, Space.x3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(rootTargeted ? AppColor.accent.opacity(0.18) : AppColor.fieldBg.opacity(0.4),
+                    in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .contentShape(Rectangle())
+        .dropDestination(for: String.self) { items, _ in
+            guard let s = items.first, let dragged = UUID(uuidString: s) else { return false }
+            let rootCount = vm.subfolders(of: nil).filter { $0.id != dragged }.count
+            Task { busy = true; _ = await vm.moveFolder(id: dragged, toParent: nil, index: rootCount); busy = false }
+            return true
+        } isTargeted: { rootTargeted = $0 }
+    }
+
     private func rowView(_ f: Folder, depth: Int) -> some View {
-        let isTarget = draggingId != nil && dropTargetId == f.id
-        let hasChildren = vm.childCount(f.id) > 0
-        return HStack(spacing: Space.x2) {
+        HStack(spacing: Space.x2) {
             if depth > 0 { Spacer().frame(width: CGFloat(depth) * indentUnit) }
             Image(systemName: "folder").font(.system(size: 14)).foregroundStyle(AppColor.textSecondary)
             VStack(alignment: .leading, spacing: 2) {
@@ -98,34 +115,22 @@ struct FolderManageView: View {
         .background(GeometryReader { g in
             Color.clear.preference(key: RowHeightKey.self, value: [f.id: g.size.height])
         })
-        .background((isTarget && dropZone == .into) ? AppColor.accent.opacity(0.15) : Color.clear,
+        .background(dropTargetId == f.id ? AppColor.accent.opacity(0.15) : Color.clear,
                     in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-        // 삽입선: 위 모서리=before, 아래 모서리=after(대상이 자식 보유면 한 단계 안쪽 들여쓰기).
-        .overlay(alignment: .top)    { if isTarget && dropZone == .before { insLine(depth: depth) } }
-        .overlay(alignment: .bottom) { if isTarget && dropZone == .after  { insLine(depth: hasChildren ? depth + 1 : depth) } }
-        .opacity(draggingId == f.id ? 0.35 : 1)
         .contentShape(Rectangle())
-        .onDrag {
-            draggingId = f.id
-            return NSItemProvider(object: f.id.uuidString as NSString)
+        .draggable(f.id.uuidString)
+        .dropDestination(for: String.self) { items, location in
+            guard let s = items.first, let dragged = UUID(uuidString: s), dragged != f.id else { return false }
+            let h = rowHeights[f.id] ?? 44
+            let rel = h > 0 ? location.y / h : 0.5
+            let zone: DropZone = rel < 0.25 ? .before
+                : (rel > 0.75 ? .after
+                   : (canNestOnto(f.id, dragged: dragged) ? .into : .after))
+            performMove(dragged, f.id, zone)
+            return true
+        } isTargeted: { over in
+            dropTargetId = over ? f.id : (dropTargetId == f.id ? nil : dropTargetId)
         }
-        .onDrop(of: [UTType.text], delegate: RowDropDelegate(
-            targetId: f.id,
-            height: rowHeights[f.id] ?? 44,
-            draggingId: $draggingId,
-            dropTargetId: $dropTargetId,
-            dropZone: $dropZone,
-            canNest: { canNestOnto($0) },
-            perform: { dragged, target, zone in performMove(dragged, target, zone) }
-        ))
-    }
-
-    private func insLine(depth: Int) -> some View {
-        Capsule().fill(AppColor.accent).frame(height: 3)
-            .padding(.leading, Space.x3 + CGFloat(depth) * indentUnit)
-            .padding(.trailing, Space.x3)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .allowsHitTesting(false)
     }
 
     // 드래그 서브트리를 제외한 평탄 배열. depth 0-based→1-based(+1).
@@ -136,10 +141,9 @@ struct FolderManageView: View {
             .map { FlatFolder(id: $0.folder.id, parentId: $0.folder.parentId, depth: $0.depth + 1) }
     }
 
-    private func canNestOnto(_ targetId: UUID) -> Bool {
-        guard let dragging = draggingId else { return false }
-        return FolderReorder.canNest(flat: flat(excluding: dragging), targetId: targetId,
-                                     subtreeHeight: vm.subtreeHeight(of: dragging), maxDepth: kMaxFolderDepth)
+    private func canNestOnto(_ targetId: UUID, dragged: UUID) -> Bool {
+        FolderReorder.canNest(flat: flat(excluding: dragged), targetId: targetId,
+                              subtreeHeight: vm.subtreeHeight(of: dragged), maxDepth: kMaxFolderDepth)
     }
 
     private func performMove(_ dragged: UUID, _ target: UUID, _ zone: DropZone) {
@@ -149,44 +153,7 @@ struct FolderManageView: View {
     }
 }
 
-// 행별 드롭 처리 — 그 행의 로컬 위치로 before/into/after 판정(글로벌 좌표 불필요).
-private struct RowDropDelegate: DropDelegate {
-    let targetId: UUID
-    let height: CGFloat
-    @Binding var draggingId: UUID?
-    @Binding var dropTargetId: UUID?
-    @Binding var dropZone: DropZone
-    let canNest: (UUID) -> Bool
-    let perform: (UUID, UUID, DropZone) -> Void
-
-    func validateDrop(info: DropInfo) -> Bool { draggingId != nil && draggingId != targetId }
-    func dropEntered(info: DropInfo) { refresh(info) }
-    func dropUpdated(info: DropInfo) -> DropProposal? { refresh(info); return DropProposal(operation: .move) }
-    func dropExited(info: DropInfo) { if dropTargetId == targetId { dropTargetId = nil } }
-    func performDrop(info: DropInfo) -> Bool {
-        guard let d = draggingId, d != targetId else { clear(); return false }
-        perform(d, targetId, zone(info))
-        clear()
-        return true
-    }
-
-    private func clear() { dropTargetId = nil; draggingId = nil }
-
-    private func zone(_ info: DropInfo) -> DropZone {
-        let rel = height > 0 ? info.location.y / height : 0.5
-        if rel < 0.25 { return .before }
-        if rel > 0.75 { return .after }
-        return canNest(targetId) ? .into : .after
-    }
-
-    private func refresh(_ info: DropInfo) {
-        guard let d = draggingId, d != targetId else { return }
-        dropTargetId = targetId
-        dropZone = zone(info)
-    }
-}
-
-// 행 높이 수집 — DropDelegate가 로컬 y를 비율로 환산할 때 사용.
+// 행 높이 수집 — 드롭 시 로컬 y를 비율로 환산할 때 사용.
 private struct RowHeightKey: PreferenceKey {
     static let defaultValue: [UUID: CGFloat] = [:]
     static func reduce(value: inout [UUID: CGFloat], nextValue: () -> [UUID: CGFloat]) {
