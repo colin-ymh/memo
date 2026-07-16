@@ -175,8 +175,19 @@ struct SupabaseMemoRepository: MemoRepository {
     }
 
     // 이동 노드의 부모+순서 동시 변경. 깊이/순환은 서버 트리거가 거부 → throw.
+    // parent_id를 null로 만들 때(최상위 이동) 자동 합성 Encodable은 encodeIfPresent로
+    // nil 키를 생략해 버려 parent_id가 안 바뀜 → 명시적 encode로 null을 강제 전송.
     func updateFolderParentAndPosition(id: UUID, parentId: UUID?, position: Int) async throws {
-        struct Upd: Encodable { let parent_id: UUID?; let position: Int }
+        struct Upd: Encodable {
+            let parent_id: UUID?
+            let position: Int
+            enum CodingKeys: String, CodingKey { case parent_id, position }
+            func encode(to encoder: Encoder) throws {
+                var c = encoder.container(keyedBy: CodingKeys.self)
+                try c.encode(parent_id, forKey: .parent_id)   // nil → JSON null(생략 안 함)
+                try c.encode(position, forKey: .position)
+            }
+        }
         try await client.from("folders")
             .update(Upd(parent_id: parentId, position: position))
             .eq("id", value: id)
