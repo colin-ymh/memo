@@ -126,21 +126,38 @@ struct FolderManageView: View {
         .gesture(dragGesture(for: f.id))
     }
 
-    // 삽입선 — 대상 행 위(before)/아래(after) 모서리, 뎁스만큼 들여쓰기.
+    // 삽입선 — 인접 두 행 "사이 갭 중앙"에 그린다. 그래서 '일상 아래'와 '가챠맵 위'처럼
+    // 결과가 같은 위치는 선도 정확히 같은 자리에 뜬다(존이 바뀌어도 안 점프).
     @ViewBuilder private var insertionLine: some View {
         if draggingId != nil, !dropIsRoot, dropZone != .into,
-           let tid = dropTargetId, let r = rowFrames[tid],
-           let node = vm.orderedTree().first(where: { $0.folder.id == tid }) {
-            let hasChildren = vm.childCount(tid) > 0
-            let depth = dropZone == .after && hasChildren ? node.depth + 1 : node.depth
-            let y = (dropZone == .before ? r.minY : r.maxY) - 1.5
+           let tid = dropTargetId, let r = rowFrames[tid] {
+            let g = insertionGeometry(tid: tid, r: r)
             Capsule().fill(AppColor.accent).frame(height: 3)
-                .padding(.leading, Space.x3 + CGFloat(depth) * indentUnit)
+                .padding(.leading, Space.x3 + CGFloat(g.depth) * indentUnit)
                 .padding(.trailing, Space.x3)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .offset(y: y)
+                .offset(y: g.y - 1.5)
                 .allowsHitTesting(false)
         }
+    }
+
+    // 삽입선 y(갭 중앙)와 들여쓰기 뎁스 계산.
+    private func insertionGeometry(tid: UUID, r: CGRect) -> (y: CGFloat, depth: Int) {
+        let tree = vm.orderedTree()
+        let idx = tree.firstIndex { $0.folder.id == tid } ?? 0
+        let hasChildren = vm.childCount(tid) > 0
+        let depth = (dropZone == .after && hasChildren) ? tree[idx].depth + 1 : tree[idx].depth
+        let y: CGFloat
+        if dropZone == .after && hasChildren {
+            y = r.maxY
+        } else if dropZone == .before {
+            let aboveMaxY = idx > 0 ? rowFrames[tree[idx - 1].folder.id]?.maxY : nil
+            y = aboveMaxY.map { ($0 + r.minY) / 2 } ?? r.minY
+        } else {
+            let belowMinY = idx < tree.count - 1 ? rowFrames[tree[idx + 1].folder.id]?.minY : nil
+            y = belowMinY.map { (r.maxY + $0) / 2 } ?? r.maxY
+        }
+        return (y, depth)
     }
 
     private func dragGesture(for id: UUID) -> some Gesture {
